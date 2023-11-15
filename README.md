@@ -1,3 +1,13 @@
+# This is a fork of https://github.com/eyalroz/cuda-api-wrappers
+
+This is a fork of the CUDA version located here: https://github.com/eyalroz/cuda-api-wrappers
+
+The intent is to provide a port that works for a limited set of HIP APIs.
+
+See here for details: https://github.com/eyalroz/cuda-api-wrappers/issues/541
+
+The starting point for this fork is the upstream v0.6.6 tag: https://github.com/eyalroz/cuda-api-wrappers/releases/tag/v0.6.6
+
 # Thin C++-flavored wrappers for the CUDA APIs:<br> Runtime, Driver, NVRTC, PTX compiler and NVTX
 
 <!--Branch Build Status: Master [![Master Build Status](https://api.travis-ci.com/eyalroz/cuda-api-wrappers.svg?branch=master)](https://travis-ci.com/eyalroz/cuda-api-wrappers) | Development: [![Development Build Status](https://api.travis-ci.com/eyalroz/cuda-api-wrappers.svg?branch=development)](https://travis-ci.com/eyalroz/cuda-api-wrappers) -->
