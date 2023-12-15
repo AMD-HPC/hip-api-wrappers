@@ -25,12 +25,8 @@ PROJECT(hip-api-wrappers
 include(GNUInstallDirs)
 set(caw_namespace "cuda-api-wrappers")
 
-# find_package(CUDAToolkit 9.0 REQUIRED)
+find_package(hip)
 find_package(Threads REQUIRED)
-# if(CUDAToolkit_VERSION VERSION_GREATER_EQUAL 11.1)
-# 	_CUDAToolkit_find_and_add_import_lib(nvptxcompiler)
-# 	_CUDAToolkit_find_and_add_import_lib(nvptxcompiler_static)
-# endif()
 set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
 
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "lib/")
@@ -56,7 +52,7 @@ foreach(wrapper_lib ${targets})
 		"$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>"
 		"$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
 	)
-	target_link_libraries(${caw_lib} INTERFACE HIP::host)
+	target_link_libraries(${caw_lib} INTERFACE hip::device)  # Should this be hip::device?
 	# Targets using these libraries should be compiled with C++11 _at least_,
 	# but it doesn't seem there's a way to express that at the CMake level
 
