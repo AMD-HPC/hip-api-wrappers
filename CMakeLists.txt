@@ -16,21 +16,21 @@ if(WIN32 AND "${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
 	set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
 
-PROJECT(cuda-api-wrappers
+PROJECT(hip-api-wrappers
 	VERSION 0.6.6
-	DESCRIPTION "Thin C++-flavored wrappers for the CUDA Runtime API"
-	HOMEPAGE_URL https://github.com/eyalroz/cuda-api-wrappers
-	LANGUAGES CUDA CXX)
+	DESCRIPTION "Thin C++-flavored wrappers for the HIP Runtime API"
+	HOMEPAGE_URL https://github.com/AMD-HPC/hip-api-wrappers
+	LANGUAGES HIP CXX)
 
 include(GNUInstallDirs)
 set(caw_namespace "cuda-api-wrappers")
 
-find_package(CUDAToolkit 9.0 REQUIRED)
+# find_package(CUDAToolkit 9.0 REQUIRED)
 find_package(Threads REQUIRED)
-if(CUDAToolkit_VERSION VERSION_GREATER_EQUAL 11.1)
-	_CUDAToolkit_find_and_add_import_lib(nvptxcompiler)
-	_CUDAToolkit_find_and_add_import_lib(nvptxcompiler_static)
-endif()
+# if(CUDAToolkit_VERSION VERSION_GREATER_EQUAL 11.1)
+# 	_CUDAToolkit_find_and_add_import_lib(nvptxcompiler)
+# 	_CUDAToolkit_find_and_add_import_lib(nvptxcompiler_static)
+# endif()
 set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
 
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "lib/")
@@ -40,7 +40,8 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "lib/")
 # Our library targets
 # -------------------
 
-set(targets runtime-and-driver nvtx rtc)
+set(targets runtime-and-driver)
+# set(targets runtime-and-driver nvtx rtc)
 set(prefixed-targets "")
 
 foreach(wrapper_lib ${targets})
@@ -55,7 +56,7 @@ foreach(wrapper_lib ${targets})
 		"$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>"
 		"$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
 	)
-	target_link_libraries(${caw_lib} INTERFACE CUDA::cudart CUDA::cuda_driver)
+	target_link_libraries(${caw_lib} INTERFACE HIP::host)
 	# Targets using these libraries should be compiled with C++11 _at least_,
 	# but it doesn't seem there's a way to express that at the CMake level
 
@@ -70,32 +71,32 @@ foreach(wrapper_lib ${targets})
 		OUTPUT_NAME ${wrapper_lib}
 	)
 endforeach()
-target_link_libraries(caw_rtc INTERFACE cuda-api-wrappers::runtime-and-driver CUDA::nvrtc)
-if(CUDAToolkit_VERSION VERSION_GREATER_EQUAL 11.1)
-	if (TARGET CUDA::nvptxcompiler)
-		target_link_libraries(caw_rtc INTERFACE CUDA::nvptxcompiler)
-	else()
-		target_link_libraries(caw_rtc INTERFACE CUDA::nvptxcompiler_static)
-	endif()
-	target_link_libraries(CUDA::nvptxcompiler_static INTERFACE Threads::Threads) # Because the NVIDIA PTX compiler itself uses threads
-endif()
-
-target_link_libraries(caw_nvtx INTERFACE cuda-api-wrappers::runtime-and-driver ${CMAKE_DL_LIBS}) # libnvToolsExt uses dlclose
-
-if(CUDAToolkit_VERSION VERSION_GREATER_EQUAL 10.0)
-	target_link_libraries(caw_nvtx INTERFACE CUDA::nvtx3)
-else()
-	target_link_libraries(caw_nvtx INTERFACE CUDA::nvToolsExt)
-endif()
+# target_link_libraries(caw_rtc INTERFACE cuda-api-wrappers::runtime-and-driver CUDA::nvrtc)
+# if(CUDAToolkit_VERSION VERSION_GREATER_EQUAL 11.1)
+# 	if (TARGET CUDA::nvptxcompiler)
+# 		target_link_libraries(caw_rtc INTERFACE CUDA::nvptxcompiler)
+# 	else()
+# 		target_link_libraries(caw_rtc INTERFACE CUDA::nvptxcompiler_static)
+# 	endif()
+# 	target_link_libraries(CUDA::nvptxcompiler_static INTERFACE Threads::Threads) # Because the NVIDIA PTX compiler itself uses threads
+# endif()
+#
+# target_link_libraries(caw_nvtx INTERFACE cuda-api-wrappers::runtime-and-driver ${CMAKE_DL_LIBS}) # libnvToolsExt uses dlclose
+#
+# if(CUDAToolkit_VERSION VERSION_GREATER_EQUAL 10.0)
+# 	target_link_libraries(caw_nvtx INTERFACE CUDA::nvtx3)
+# else()
+# 	target_link_libraries(caw_nvtx INTERFACE CUDA::nvToolsExt)
+# endif()
 
 
 # Note: This is a bit like a poor man's configure.h file;
 # but for two settings I won't bother creating one of those
-if(DEFINED CMAKE_USE_PTHREADS_INIT)
-	target_compile_definitions(caw_nvtx INTERFACE "" "CUDA_API_WRAPPERS_USE_PTHREADS")
-elseif(DEFINED CMAKE_USE_WIN32_THREADS_INIT)
-	target_compile_definitions(caw_nvtx INTERFACE "" "CUDA_API_WRAPPERS_USE_WIN32_THREADS")
-endif()
+# if(DEFINED CMAKE_USE_PTHREADS_INIT)
+# 	target_compile_definitions(caw_nvtx INTERFACE "" "CUDA_API_WRAPPERS_USE_PTHREADS")
+# elseif(DEFINED CMAKE_USE_WIN32_THREADS_INIT)
+# 	target_compile_definitions(caw_nvtx INTERFACE "" "CUDA_API_WRAPPERS_USE_WIN32_THREADS")
+# endif()
 
 # --------
 # Examples
