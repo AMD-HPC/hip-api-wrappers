@@ -10,10 +10,10 @@
 
 #include "types.hpp"
 
-#include <cuda_runtime_api.h>
+#include <hip/hip_runtime_api.h>
 #include "error.hpp"
 
-#include <cuda.h>
+#include <hip/hip_runtime.h>
 #include <ostream>
 #include <utility>
 
@@ -29,7 +29,7 @@ namespace cuda {
 inline void initialize_driver()
 {
 	static constexpr const unsigned dummy_flags { 0 }; // this is the only allowed value for flags
-	auto status = cuInit(dummy_flags);
+	auto status = hipInit(dummy_flags);
 	throw_if_error_lazy(status, "Failed initializing the CUDA driver");
 }
 
@@ -50,7 +50,7 @@ namespace device {
  *
  * @note This _should_ be returning an unsigned value; unfortunately, device::handle_t  is
  * signed in CUDA for some reason and we maintain compatibility (although this might
- * change in the future). So... the returned type is the same as in cudaGetDeviceCount,
+ * change in the future). So... the returned type is the same as in hipGetDeviceCount,
  * a signed integer.
  *
  * @return the number of CUDA devices on this system
@@ -62,14 +62,14 @@ inline device::id_t count()
 		// This function is often called before any device is obtained (which is where we
 		// expect the driver to be initialized)
 	int device_count = 0; // Initializing, just to be on the safe side
-	status_t result = cuDeviceGetCount(&device_count);
+	status_t result = hipGetDeviceCount(&device_count);
 	switch(result) {
 		case status::no_device: return 0;
 		case status::success: break;
 		default: throw runtime_error(result, "Failed obtaining the number of CUDA devices on the system");
 	}
 	if (device_count < 0) {
-		throw ::std::logic_error("cudaGetDeviceCount() reports an invalid number of CUDA devices");
+		throw ::std::logic_error("hipGetDeviceCount() reports an invalid number of CUDA devices");
 	}
 	return device_count;
 }
