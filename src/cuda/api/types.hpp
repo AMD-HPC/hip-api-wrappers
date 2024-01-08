@@ -661,7 +661,7 @@ static_assert(sizeof(void *) == sizeof(device::address_t), "Unexpected address s
 inline address_t address(const void* device_ptr) noexcept
 {
 	static_assert(sizeof(void*) == sizeof(address_t), "Incompatible sizes for a void pointer and memory::device::address_t");
-	return reinterpret_cast<address_t>(device_ptr);
+	return reinterpret_cast<address_t>(const_cast<void *>(device_ptr));
 }
 
 } // namespace device
@@ -686,8 +686,6 @@ public:
 	base_region_t() noexcept = default;
 	base_region_t(T* start, size_t size_in_bytes) noexcept
 		: start_(start), size_in_bytes_(size_in_bytes) {}
-	base_region_t(device::address_t start, size_t size_in_bytes) noexcept
-		: start_(as_pointer(start)), size_in_bytes_(size_in_bytes) {}
 
 	template <typename U>
 	base_region_t(span<U> span) noexcept : start_(span.data()), size_in_bytes_(span.size() * sizeof(U))
