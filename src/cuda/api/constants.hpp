@@ -125,7 +125,7 @@ namespace context {
 
 namespace detail_ {
 
-constexpr const CUcontext none { 0 };
+// constexpr const CUcontext none { 0 };
 
 } // namespace detail_
 
