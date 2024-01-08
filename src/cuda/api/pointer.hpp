@@ -20,8 +20,8 @@
 #include "error.hpp"
 #include "types.hpp"
 
-#include <cuda_runtime_api.h>
-#include <cuda.h>
+#include <hip/hip_runtime_api.h>
+#include <hip/hip_runtime.h>
 
 #ifndef NDEBUG
 #include <cassert>
@@ -39,13 +39,13 @@ namespace memory {
 /**
  * @brief see @ref memory::host, @ref memory::device, @ref memory::managed
  */
-enum type_t : ::std::underlying_type<CUmemorytype>::type {
-	host_         = CU_MEMORYTYPE_HOST,
-	device_       = CU_MEMORYTYPE_DEVICE,
-	array         = CU_MEMORYTYPE_ARRAY,
-	unified_      = CU_MEMORYTYPE_UNIFIED,
-	managed_      = CU_MEMORYTYPE_UNIFIED, // an alias (more like the runtime API name)
-	non_cuda      = ~(::std::underlying_type<CUmemorytype>::type{0})
+enum type_t : ::std::underlying_type<hipMemoryType>::type {
+	host_         = hipMemoryTypeHost,
+	device_       = hipMemoryTypeDevice,
+	array         = hipMemoryTypeArray,
+	unified_      = hipMemoryTypeUnified,
+	managed_      = hipMemoryTypeUnified, // an alias (more like the runtime API name)
+	non_cuda      = ~(::std::underlying_type<hipMemoryType>::type{0})
 };
 
 namespace pointer {
@@ -57,29 +57,29 @@ namespace detail_ {
 void get_attributes(unsigned num_attributes, pointer::attribute_t* attributes, void** value_ptrs, const void* ptr);
 
 template <attribute_t attribute> struct attribute_value {};
-template <> struct attribute_value<CU_POINTER_ATTRIBUTE_CONTEXT>                    { using type = context::handle_t;};
-template <> struct attribute_value<CU_POINTER_ATTRIBUTE_MEMORY_TYPE>                { using type = memory::type_t;};
-template <> struct attribute_value<CU_POINTER_ATTRIBUTE_DEVICE_POINTER>             { using type = void*;};
-template <> struct attribute_value<CU_POINTER_ATTRIBUTE_HOST_POINTER>               { using type = void*;};
-template <> struct attribute_value<CU_POINTER_ATTRIBUTE_P2P_TOKENS>                 { using type = struct CUDA_POINTER_ATTRIBUTE_P2P_TOKEN;};
-template <> struct attribute_value<CU_POINTER_ATTRIBUTE_SYNC_MEMOPS>                { using type = int;};
-template <> struct attribute_value<CU_POINTER_ATTRIBUTE_BUFFER_ID>                  { using type = unsigned long long;};
-template <> struct attribute_value<CU_POINTER_ATTRIBUTE_IS_MANAGED>                 { using type = int;};
+template <> struct attribute_value<HIP_POINTER_ATTRIBUTE_CONTEXT>                    { using type = context::handle_t;};
+template <> struct attribute_value<HIP_POINTER_ATTRIBUTE_MEMORY_TYPE>                { using type = memory::type_t;};
+template <> struct attribute_value<HIP_POINTER_ATTRIBUTE_DEVICE_POINTER>             { using type = void*;};
+template <> struct attribute_value<HIP_POINTER_ATTRIBUTE_HOST_POINTER>               { using type = void*;};
+template <> struct attribute_value<HIP_POINTER_ATTRIBUTE_P2P_TOKENS>                 { using type = struct CUDA_POINTER_ATTRIBUTE_P2P_TOKEN;};
+template <> struct attribute_value<HIP_POINTER_ATTRIBUTE_SYNC_MEMOPS>                { using type = int;};
+template <> struct attribute_value<HIP_POINTER_ATTRIBUTE_BUFFER_ID>                  { using type = unsigned long long;};
+template <> struct attribute_value<HIP_POINTER_ATTRIBUTE_IS_MANAGED>                 { using type = int;};
 #if CUDA_VERSION >= 9020
-template <> struct attribute_value<CU_POINTER_ATTRIBUTE_DEVICE_ORDINAL>             { using type = cuda::device::id_t;};
+template <> struct attribute_value<HIP_POINTER_ATTRIBUTE_DEVICE_ORDINAL>             { using type = cuda::device::id_t;};
 #if CUDA_VERSION >= 10020
-template <> struct attribute_value<CU_POINTER_ATTRIBUTE_RANGE_START_ADDR>           { using type = void*;};
-template <> struct attribute_value<CU_POINTER_ATTRIBUTE_RANGE_SIZE>                 { using type = size_t;};
-template <> struct attribute_value<CU_POINTER_ATTRIBUTE_MAPPED>                     { using type = int;};
-template <> struct attribute_value<CU_POINTER_ATTRIBUTE_IS_LEGACY_CUDA_IPC_CAPABLE> { using type = int;};
-template <> struct attribute_value<CU_POINTER_ATTRIBUTE_ALLOWED_HANDLE_TYPES>       { using type = uint64_t;};
+template <> struct attribute_value<HIP_POINTER_ATTRIBUTE_RANGE_START_ADDR>           { using type = void*;};
+template <> struct attribute_value<HIP_POINTER_ATTRIBUTE_RANGE_SIZE>                 { using type = size_t;};
+template <> struct attribute_value<HIP_POINTER_ATTRIBUTE_MAPPED>                     { using type = int;};
+template <> struct attribute_value<HIP_POINTER_ATTRIBUTE_IS_LEGACY_HIP_IPC_CAPABLE> { using type = int;};
+template <> struct attribute_value<HIP_POINTER_ATTRIBUTE_ALLOWED_HANDLE_TYPES>       { using type = uint64_t;};
 #if CUDA_VERSION >= 11030
-template <> struct attribute_value<CU_POINTER_ATTRIBUTE_MEMPOOL_HANDLE>             { using type = pool::handle_t;};
+template <> struct attribute_value<HIP_POINTER_ATTRIBUTE_MEMPOOL_HANDLE>             { using type = pool::handle_t;};
 #endif // CUDA_VERSION >= 11030
 #endif // CUDA_VERSION >= 10020
 #endif // CUDA_VERSION >= 9020
 
-template <CUpointer_attribute attribute>
+template <hipPointer_attribute attribute>
 using attribute_value_t = typename attribute_value<attribute>::type;
 
 template<attribute_t attribute>
@@ -96,7 +96,7 @@ attribute_value_t<attribute> get_attribute(const void* ptr);
 
 inline context::handle_t context_handle_of(const void* ptr)
 {
-	return pointer::detail_::get_attribute<CU_POINTER_ATTRIBUTE_CONTEXT>(ptr);
+	return pointer::detail_::get_attribute<HIP_POINTER_ATTRIBUTE_CONTEXT>(ptr);
 }
 
 inline cuda::device::id_t device_id_of(const void* ptr);
@@ -107,7 +107,7 @@ inline cuda::device::id_t device_id_of(const void* ptr);
 
 inline memory::type_t type_of(const void* ptr)
 {
-	auto result = pointer::detail_::get_attribute_with_status<CU_POINTER_ATTRIBUTE_MEMORY_TYPE>(ptr);
+	auto result = pointer::detail_::get_attribute_with_status<HIP_POINTER_ATTRIBUTE_MEMORY_TYPE>(ptr);
 	// Note: As of CUDA 12, CUDA treats passing a non-CUDA-allocated pointer to the memory type check
 	// as an error, though it really should not be
 	return (result.status == status::named_t::invalid_value) ?
@@ -162,7 +162,7 @@ public: // other non-mutators
 	 */
 	T* get_for_device() const
 	{
-		return pointer::detail_::get_attribute<CU_POINTER_ATTRIBUTE_DEVICE_POINTER>(ptr_);
+		return pointer::detail_::get_attribute<HIP_POINTER_ATTRIBUTE_DEVICE_POINTER>(ptr_);
 	}
 
 	/**
@@ -174,15 +174,15 @@ public: // other non-mutators
 	 */
 	T* get_for_host() const
 	{
-		return pointer::detail_::get_attribute<CU_POINTER_ATTRIBUTE_HOST_POINTER>(ptr_);
+		return pointer::detail_::get_attribute<HIP_POINTER_ATTRIBUTE_HOST_POINTER>(ptr_);
 	}
 
 #if CUDA_VERSION >= 10020
 	region_t containing_range() const
 	{
 		// TODO: Consider checking the alignment
-		auto range_start = pointer::detail_::get_attribute<CU_POINTER_ATTRIBUTE_RANGE_START_ADDR>(ptr_);
-		auto range_size = pointer::detail_::get_attribute<CU_POINTER_ATTRIBUTE_RANGE_SIZE>(ptr_);
+		auto range_start = pointer::detail_::get_attribute<HIP_POINTER_ATTRIBUTE_RANGE_START_ADDR>(ptr_);
+		auto range_size = pointer::detail_::get_attribute<HIP_POINTER_ATTRIBUTE_RANGE_SIZE>(ptr_);
 		return { range_start, range_size};
 	}
 #endif
@@ -201,9 +201,9 @@ public: // other non-mutators
 	pointer_t other_side_of_region_pair() const
 	{
 		pointer::attribute_t attributes[] = {
-		CU_POINTER_ATTRIBUTE_MEMORY_TYPE,
-		CU_POINTER_ATTRIBUTE_HOST_POINTER,
-		CU_POINTER_ATTRIBUTE_DEVICE_POINTER
+		HIP_POINTER_ATTRIBUTE_MEMORY_TYPE,
+		HIP_POINTER_ATTRIBUTE_HOST_POINTER,
+		HIP_POINTER_ATTRIBUTE_DEVICE_POINTER
 		};
 		type_t memory_type;
 		T* host_ptr;
