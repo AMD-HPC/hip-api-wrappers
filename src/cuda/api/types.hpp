@@ -25,10 +25,10 @@
 
 #include "detail/optional.hpp"
 
-#ifndef __CUDACC__
+#ifndef __HIPCC__
 #include <builtin_types.h>
 #endif
-#include <cuda.h>
+#include <hip/hip_runtime.h>
 
 #if __cplusplus >= 202002L
 #include <span>
@@ -44,7 +44,7 @@
 #include <stdexcept>
 #endif
 
-#ifndef __CUDACC__
+#ifndef __HIPCC__
 #ifndef __device__
 #define __device__
 #define __host__
@@ -185,11 +185,11 @@ struct span {
  * Indicates either the result (success or error index) of a CUDA Runtime or Driver API call,
  * or the overall status of the API (which is typically the last triggered error).
  *
- * @note This single type really needs to double as both CUresult for driver API calls and
- * cudaError_t for runtime API calls. These aren't actually the same type - but they are both enums,
+ * @note This single type really needs to double as both hipError_t for driver API calls and
+ * hipError_t for runtime API calls. These aren't actually the same type - but they are both enums,
  * sharing most of the defined values. See also @ref error.hpp where we unify the set of errors.
  */
-using status_t = CUresult;
+using status_t = hipError_t;
 
 using size_t = ::std::size_t;
 
@@ -209,7 +209,7 @@ using dimension_t = size_t;
  * much larger in each axis.
  *
  * @note See also <a href="https://docs.nvidia.com/cuda/cuda-runtime-api/structcudaExtent.html">
- * the description of `struct cudaExtent`</a> in the CUDA Runtime API documentation.
+ * the description of `struct hipExtent`</a> in the CUDA Runtime API documentation.
  */
 template<dimensionality_t NumDimensions>
 struct dimensions_t;
@@ -218,13 +218,13 @@ struct dimensions_t;
  * Dimensions for 3D CUDA arrays
  */
 template<>
-struct dimensions_t<3> // this almost-inherits cudaExtent
+struct dimensions_t<3> // this almost-inherits hipExtent
 {
 	dimension_t width, height, depth;
 
 	constexpr __host__ __device__ dimensions_t(dimension_t width_, dimension_t height_, dimension_t depth_)
 		: width(width_), height(height_), depth(depth_) { }
-	constexpr __host__ __device__ dimensions_t(cudaExtent e)
+	constexpr __host__ __device__ dimensions_t(hipExtent e)
 		: dimensions_t(e.width, e.height, e.depth) { }
 	constexpr __host__ __device__ dimensions_t(const dimensions_t& other)
 		: dimensions_t(other.width, other.height, other.depth) { }
@@ -236,10 +236,10 @@ struct dimensions_t<3> // this almost-inherits cudaExtent
 	CPP14_CONSTEXPR dimensions_t& operator=(const dimensions_t& other) = default;
 	CPP14_CONSTEXPR dimensions_t& operator=(dimensions_t&& other) = default;
 
-	constexpr __host__ __device__ operator cudaExtent() const
+	constexpr __host__ __device__ operator hipExtent() const
 	{
 		return { width, height, depth };
-			// Note: We're not using make_cudaExtent here because:
+			// Note: We're not using make_hipExtent here because:
 			// 1. It's not constexpr and
 			// 2. It doesn't do anything except construct the plain struct - as of CUDA 10 at least
 	}
@@ -310,7 +310,7 @@ namespace event {
 /**
  * The CUDA Runtime API's numeric handle for events
  */
-using handle_t = CUevent;
+using handle_t = hipEvent_t;
 
 namespace ipc {
 
@@ -318,7 +318,7 @@ namespace ipc {
  * The concrete value passed between processes, used to tell
  * the CUDA Runtime API which event is desired.
  */
-using handle_t = CUipcEventHandle;
+using handle_t = hipIpcEventHandle_t;
 
 } // namespace ipc
 
@@ -334,7 +334,7 @@ namespace stream {
 /**
  * The CUDA API's handle for streams
  */
-using handle_t             = CUstream;
+using handle_t             = hipStream_t;
 
 /**
  * CUDA streams have a scheduling priority, with lower values meaning higher priority.
@@ -353,9 +353,9 @@ enum : priority_t {
 namespace detail_ {
 
 #if CUDA_VERSION >= 10000
-using callback_t = CUhostFn;
+using callback_t = hipHostFn_t;
 #else
-using callback_t = CUstreamCallback;
+using callback_t = hipStreamCallback_t;
 #endif
 
 } // namespace detail_
@@ -575,18 +575,18 @@ struct access_permissions_t {
 	bool read : 1;
 	bool write : 1;
 
-	operator CUmemAccess_flags() const noexcept
+	operator hipMemAccessFlags() const noexcept
 	{
 		return read ?
-			   (write ? CU_MEM_ACCESS_FLAGS_PROT_READWRITE : CU_MEM_ACCESS_FLAGS_PROT_READ) :
-			   CU_MEM_ACCESS_FLAGS_PROT_NONE;
+			   (write ? hipMemAccessFlagsProtReadWrite : hipMemAccessFlagsProtRead) :
+			   hipMemAccessFlagsProtNone;
 	}
 
-	static access_permissions_t from_access_flags(CUmemAccess_flags access_flags)
+	static access_permissions_t from_access_flags(hipMemAccessFlags access_flags)
 	{
 		access_permissions_t result;
-		result.read = (access_flags & CU_MEM_ACCESS_FLAGS_PROT_READ);
-		result.write = (access_flags & CU_MEM_ACCESS_FLAGS_PROT_READWRITE);
+		result.read = (access_flags & hipMemAccessFlagsProtRead);
+		result.write = (access_flags & hipMemAccessFlagsProtReadWrite);
 		return result;
 	}
 
@@ -598,14 +598,14 @@ struct access_permissions_t {
 
 namespace physical_allocation {
 
-// TODO: Consider simply aliasing CUmemAllocationHandleType and using constexpr const's or anonymous enums
-enum class shared_handle_kind_t : ::std::underlying_type<CUmemAllocationHandleType>::type {
+// TODO: Consider simply aliasing hipMemAllocationHandleType and using constexpr const's or anonymous enums
+enum class shared_handle_kind_t : ::std::underlying_type<hipMemAllocationHandleType>::type {
 #if CUDA_VERSION >= 11020
-	no_export             = CU_MEM_HANDLE_TYPE_NONE,
+	no_export             = hipMemHandleTypeNone,
 #endif
-	posix_file_descriptor = CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR,
-	win32_handle          = CU_MEM_HANDLE_TYPE_WIN32,
-	win32_kmt             = CU_MEM_HANDLE_TYPE_WIN32_KMT,
+	posix_file_descriptor = hipMemHandleTypePosixFileDescriptor,
+	win32_handle          = hipMemHandleTypeWin32,
+	win32_kmt             = hipMemHandleTypeWin32Kmt,
 };
 
 namespace detail_ {
@@ -631,7 +631,7 @@ namespace pool {
 /**
  * @note Unsupported for now
  */
-using handle_t = CUmemoryPool;
+using handle_t = hipMemPool_t;
 using shared_handle_kind_t = physical_allocation::shared_handle_kind_t;
 using physical_allocation::shared_handle_t;
 
@@ -640,7 +640,7 @@ using physical_allocation::shared_handle_t;
 
 namespace pointer {
 
-using attribute_t = CUpointer_attribute;
+using attribute_t = hipPointer_attribute;
 
 } // namespace pointer
 
@@ -649,7 +649,7 @@ namespace device {
 /**
  * The numeric type which can represent the range of memory addresses on a CUDA device.
  */
-using address_t = CUdeviceptr;
+using address_t = hipDeviceptr_t;
 
 static_assert(sizeof(void *) == sizeof(device::address_t), "Unexpected address size");
 
@@ -806,7 +806,7 @@ enum class initial_visibility_t {
 	to_supporters_of_concurrent_managed_access,
 };
 
-using range_attribute_t = CUmem_range_attribute;
+using range_attribute_t = hipMemRangeAttribute;
 
 } // namespace managed
 
@@ -822,7 +822,7 @@ enum class barrier_scope_t : typename ::std::underlying_type<CUstreamMemoryBarri
  */
 namespace external {
 
-using handle_t = CUexternalMemory;
+using handle_t = hipExternalMemory_t;
 
 /**
  * Describes a subregion with the context of a larger (memory) region
@@ -849,15 +849,15 @@ struct launch_configuration_t;
  * change the balance in the allocation of L1-cache-like resources between
  * actual L1 cache and shared memory; these are the possible choices.
  */
-enum class multiprocessor_cache_preference_t : ::std::underlying_type<CUfunc_cache_enum>::type {
+enum class multiprocessor_cache_preference_t : ::std::underlying_type<hipFuncCache_t>::type {
 	/** No preference for more L1 cache or for more shared memory; the API can do as it please */
-	no_preference                 = CU_FUNC_CACHE_PREFER_NONE,
+	no_preference                 = hipFuncCachePreferNone,
 	/** Divide the cache resources equally between actual L1 cache and shared memory */
-	equal_l1_and_shared_memory    = CU_FUNC_CACHE_PREFER_EQUAL,
+	equal_l1_and_shared_memory    = hipFuncCachePreferEqual,
 	/** Divide the cache resources to maximize available shared memory at the expense of L1 cache */
-	prefer_shared_memory_over_l1  = CU_FUNC_CACHE_PREFER_SHARED,
+	prefer_shared_memory_over_l1  = hipFuncCachePreferShared,
 	/** Divide the cache resources to maximize available L1 cache at the expense of shared memory */
-	prefer_l1_over_shared_memory  = CU_FUNC_CACHE_PREFER_L1,
+	prefer_l1_over_shared_memory  = hipFuncCachePreferL1,
 	// aliases
 	none                          = no_preference,
 	equal                         = equal_l1_and_shared_memory,
@@ -876,11 +876,11 @@ enum class multiprocessor_cache_preference_t : ::std::underlying_type<CUfunc_cac
  * @ref device_t::shared_memory_bank_size .
  */
 enum multiprocessor_shared_memory_bank_size_option_t
-	: ::std::underlying_type<CUsharedconfig>::type
+	: ::std::underlying_type<hipSharedMemConfig>::type
 {
-	device_default       = CU_SHARED_MEM_CONFIG_DEFAULT_BANK_SIZE,
-	four_bytes_per_bank  = CU_SHARED_MEM_CONFIG_FOUR_BYTE_BANK_SIZE,
-	eight_bytes_per_bank = CU_SHARED_MEM_CONFIG_EIGHT_BYTE_BANK_SIZE
+	device_default       = hipSharedMemBankSizeDefault,
+	four_bytes_per_bank  = hipSharedMemBankSizeFourByte,
+	eight_bytes_per_bank = hipSharedMemBankSizeEightByte
 };
 
 /**
@@ -895,13 +895,13 @@ namespace device {
  * @note at the time of writing and the foreseeable future, this
  * type should be an int.
  */
-using id_t               = CUdevice;
+using id_t               = hipDevice_t;
 
 /**
  * CUDA devices have both "attributes" and "properties". This is the
  * type for attribute identifiers/indices.
  */
-using attribute_t        = CUdevice_attribute;
+using attribute_t        = hipDeviceAttribute_t;
 /**
  * All CUDA device attributes (@ref cuda::device::attribute_t) have a value of this type.
  */
@@ -914,7 +914,7 @@ namespace peer_to_peer {
  * there are also attributes characterizing pairs; this type is used for
  * identifying/indexing them.
  */
-using attribute_t = CUdevice_P2PAttribute;
+using attribute_t = hipDeviceP2PAttr;
 
 } // namespace peer_to_peer
 
@@ -922,7 +922,7 @@ using attribute_t = CUdevice_P2PAttribute;
 
 namespace context {
 
-using handle_t = CUcontext;
+using handle_t = hipCtx_t;
 
 using flags_t = unsigned;
 
@@ -943,7 +943,7 @@ enum host_thread_sync_scheduling_policy_t : unsigned int {
 	 * otherwise CUDA will not yield while waiting for results and
 	 * actively spin on the processor.
 	 */
-	heuristic = CU_CTX_SCHED_AUTO,
+	heuristic = hipDeviceScheduleAuto,
 
 	/**
 	 * @brief Alias for the default behavior; see @ref heuristic .
@@ -959,7 +959,7 @@ enum host_thread_sync_scheduling_policy_t : unsigned int {
 	 * work in parallel with the CUDA thread.
 	 *
 	 */
-	spin      = CU_CTX_SCHED_SPIN,
+	spin      = hipDeviceScheduleSpin,
 
 	/**
 	 * @brief Block the thread until results are available.
@@ -967,7 +967,7 @@ enum host_thread_sync_scheduling_policy_t : unsigned int {
 	 * Instruct CUDA to block the CPU thread on a synchronization
 	 * primitive when waiting for the device to finish work.
 	 */
-	block     = CU_CTX_SCHED_BLOCKING_SYNC,
+	block     = hipDeviceScheduleBlockingSync,
 
 	/**
 	 * @brief Yield control while waiting for results.
@@ -978,7 +978,7 @@ enum host_thread_sync_scheduling_policy_t : unsigned int {
 	 * performing work in parallel with the device.
 	 *
 	 */
-	yield     = CU_CTX_SCHED_YIELD,
+	yield     = hipDeviceScheduleYield,
 
 	/** see @ref heuristic */
 	automatic = heuristic,
@@ -1017,22 +1017,22 @@ inline T identity_cast(U&& x)
 
 } // namespace detail_
 
-using uuid_t = CUuuid;
+using uuid_t = hipUUID;
 
 namespace module {
 
-using handle_t = CUmodule;
+using handle_t = hipModule_t;
 
 } // namespace module
 
 namespace kernel {
 
-using attribute_t = CUfunction_attribute;
+using attribute_t = hipFunction_attribute;
 using attribute_value_t = int;
 
 // TODO: Is this really only for kernels, or can any device-side function be
-// represented by a CUfunction?
-using handle_t = CUfunction;
+// represented by a hipFunction_t?
+using handle_t = hipFunction_t;
 
 } // namespace kernel
 
@@ -1043,7 +1043,7 @@ using dynarray = ::std::vector<T>;
 
 } // namespace cuda
 
-#ifndef __CUDACC__
+#ifndef __HIPCC__
 #ifndef __device__
 #define __device__
 #define __host__
