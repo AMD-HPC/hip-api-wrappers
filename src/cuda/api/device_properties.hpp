@@ -14,7 +14,7 @@
 
 #include "types.hpp"
 
-#include <cuda_runtime_api.h>
+#include <hip/hip_runtime_api.h>
 
 #include <stdexcept>
 
@@ -117,11 +117,11 @@ constexpr compute_capability_t make_compute_capability(unsigned major, unsigned 
  * attributes are more one-at-a-time.
  *
  */
-struct properties_t : public cudaDeviceProp {
+struct properties_t : public hipDeviceProp_t {
 
 	properties_t() = default;
-	properties_t(const cudaDeviceProp& cdp) noexcept : cudaDeviceProp(cdp) { };
-	properties_t(cudaDeviceProp&& cdp) noexcept : cudaDeviceProp(cdp) { };
+	properties_t(const hipDeviceProp_t& cdp) noexcept : hipDeviceProp_t(cdp) { };
+	properties_t(hipDeviceProp_t&& cdp) noexcept : hipDeviceProp_t(cdp) { };
 	bool usable_for_compute() const noexcept;
 	compute_capability_t compute_capability() const noexcept
 	{
