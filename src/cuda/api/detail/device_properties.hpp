@@ -190,9 +190,9 @@ inline constexpr unsigned max_warp_schedulings_per_processor_cycle(const compute
  * @note Remember that regardless of the value you get from this function,
  * to use more than 48 KiB per block you may need a call such as:
  *
- *	 cudaFuncSetAttribute(
+ *	 hipFuncSetAttribute(
  *	     my_kernel,
- *	     cudaFuncAttributePreferredSharedMemoryCarveout,
+ *	     hipFuncAttributePreferredSharedMemoryCarveout,
  *	     cudaSharedmemCarveoutMaxShared
  *	 );
  *
@@ -263,7 +263,7 @@ inline unsigned compute_capability_t::max_resident_warps_per_processor() const
 
 inline bool properties_t::usable_for_compute() const noexcept
 {
-	return computeMode != cudaComputeModeProhibited;
+	return computeMode != hipComputeModeProhibited;
 }
 
 } // namespace device
