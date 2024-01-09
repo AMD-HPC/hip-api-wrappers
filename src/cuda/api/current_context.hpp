@@ -9,7 +9,7 @@
 #include "constants.hpp"
 #include "types.hpp"
 
-#include <cuda.h>
+#include <hip/hip_runtime.h>
 
 namespace cuda {
 
@@ -29,7 +29,7 @@ namespace current {
 inline bool exists()
 {
 	context::handle_t handle;
-	auto status = cuCtxGetCurrent(&handle);
+	auto status = hipCtxGetCurrent(&handle);
 	if (status == cuda::status::not_yet_initialized) {
 		return false;
 	}
@@ -48,12 +48,12 @@ namespace detail_ {
 inline bool is_(handle_t handle)
 {
 	handle_t current_context_handle;
-	auto status = cuCtxGetCurrent(&current_context_handle);
+	auto status = hipCtxGetCurrent(&current_context_handle);
 	switch(status) {
-	case CUDA_ERROR_NOT_INITIALIZED:
-	case CUDA_ERROR_INVALID_CONTEXT:
+	case hipErrorNotInitialized:
+	case hipErrorInvalidContext:
 		return false;
-	case CUDA_SUCCESS:
+	case hipSuccess:
 		return (handle == current_context_handle);
 	default:
 		throw cuda::runtime_error(status,
@@ -77,7 +77,7 @@ struct status_and_handle_pair {
 inline status_and_handle_pair get_with_status()
 {
 	handle_t handle;
-	auto status = cuCtxGetCurrent(&handle);
+	auto status = hipCtxGetCurrent(&handle);
 	if (status == status::not_yet_initialized) {
 		handle = context::detail_::none;
 	}
@@ -101,7 +101,7 @@ inline handle_t get_handle()
 inline context::flags_t get_flags()
 {
 	context::flags_t result;
-	auto status = cuCtxGetFlags(&result);
+	auto status = hipCtxGetFlags(&result);
 	throw_if_error_lazy(status, "Failed obtaining the current context's flags");
 	return result;
 }
@@ -109,7 +109,7 @@ inline context::flags_t get_flags()
 inline device::id_t get_device_id()
 {
 	device::id_t device_id;
-	auto result = cuCtxGetDevice(&device_id);
+	auto result = hipCtxGetDevice(&device_id);
 	throw_if_error_lazy(result, "Failed obtaining the current context's device");
 	return device_id;
 }
@@ -124,7 +124,7 @@ inline device::id_t get_device_id()
  */
 inline void push(handle_t context_handle)
 {
-	auto status = cuCtxPushCurrent(context_handle);
+	auto status = hipCtxPushCurrent(context_handle);
 	throw_if_error_lazy(status, "Failed pushing to the top of the context stack: "
 		+ context::detail_::identify(context_handle));
 }
@@ -151,7 +151,7 @@ inline bool push_if_not_on_top(handle_t context_handle)
 inline context::handle_t pop()
 {
 	handle_t popped_context_handle;
-	auto status = cuCtxPopCurrent(&popped_context_handle);
+	auto status = hipCtxPopCurrent(&popped_context_handle);
 	throw_if_error_lazy(status, "Failed popping the current CUDA context");
 	return popped_context_handle;
 }
@@ -161,7 +161,7 @@ inline void set(handle_t context_handle)
 	// Thought about doing this:
 	// if (detail_::get_handle() == context_handle_) { return; }
 	// ... but decided against it.
-	auto status = cuCtxSetCurrent(context_handle);
+	auto status = hipCtxSetCurrent(context_handle);
 	throw_if_error_lazy(status,
 		"Failed setting the current context to " + context::detail_::identify(context_handle));
 }
@@ -240,7 +240,7 @@ public:
 
 inline void synchronize()
 {
-	auto status = cuCtxSynchronize();
+	auto status = hipCtxSynchronize();
 	if (not is_success(status)) {
 		throw cuda::runtime_error(status, "Failed synchronizing current context");
 	}
@@ -252,7 +252,7 @@ namespace detail_ {
 // allowing for throwing a more informative exception on failure
 inline void synchronize(context::handle_t current_context_handle)
 {
-	auto status = cuCtxSynchronize();
+	auto status = hipCtxSynchronize();
 	if (not is_success(status)) {
 		throw cuda::runtime_error(status,"Failed synchronizing "
 			+ context::detail_::identify(current_context_handle));
@@ -265,7 +265,7 @@ inline void synchronize(
 	device::id_t current_context_device_id,
 	context::handle_t current_context_handle)
 {
-	auto status = cuCtxSynchronize();
+	auto status = hipCtxSynchronize();
 	if (not is_success(status)) {
 		throw cuda::runtime_error(status, "Failed synchronizing "
 			+ context::detail_::identify(current_context_handle, current_context_device_id));
