@@ -13,7 +13,7 @@
 #include "constants.hpp"
 #include "types.hpp"
 
-#include <cuda.h>
+#include <hip/hip_runtime.h>
 #include <string>
 #include <utility>
 
@@ -33,9 +33,9 @@ struct options_t;
 
 namespace context {
 
-using limit_t = CUlimit;
+using limit_t = hipLimit_t;
 using limit_value_t = size_t;
-using shared_memory_bank_size_t = CUsharedconfig;
+using shared_memory_bank_size_t = hipSharedMemConfig;
 
 /**
  * A range of priorities supported by a CUDA context; ranges from the
@@ -83,14 +83,14 @@ namespace detail_ {
 inline limit_value_t get_limit(limit_t limit_id)
 {
 	limit_value_t limit_value;
-	auto status = cuCtxGetLimit(&limit_value, limit_id);
+	auto status = hipDeviceGetLimit(&limit_value, limit_id);
 	throw_if_error_lazy(status, "Failed obtaining CUDA context limit value");
 	return limit_value;
 }
 
 inline void set_limit(limit_t limit_id, limit_value_t new_value)
 {
-	auto status = cuCtxSetLimit(limit_id, new_value);
+	auto status = hipDeviceSetLimit(limit_id, new_value);
 	throw_if_error_lazy(status, "Failed obtaining CUDA context limit value");
 }
 
@@ -100,7 +100,7 @@ constexpr flags_t inline make_flags(
 {
 	return
 		  sync_scheduling_policy // this enum value is also a valid bitmask
-		| (keep_larger_local_mem_after_resize    ? CU_CTX_LMEM_RESIZE_TO_MAX : 0);
+		| (keep_larger_local_mem_after_resize    ? hipDeviceLmemResizeToMax : 0);
 }
 
 // consider renaming this: device_id_of
@@ -122,7 +122,7 @@ context_t from_handle(
 inline size_t total_memory(handle_t handle)
 {
 	size_t total_mem_in_bytes;
-	auto status = cuMemGetInfo(nullptr, &total_mem_in_bytes);
+	auto status = hipMemGetInfo(nullptr, &total_mem_in_bytes);
 	throw_if_error_lazy(status, "Failed determining amount of total memory for " + identify(handle));
 	return total_mem_in_bytes;
 
@@ -131,14 +131,14 @@ inline size_t total_memory(handle_t handle)
 inline size_t free_memory(handle_t handle)
 {
 	size_t free_mem_in_bytes;
-	auto status = cuMemGetInfo(&free_mem_in_bytes, nullptr);
+	auto status = hipMemGetInfo(&free_mem_in_bytes, nullptr);
 	throw_if_error_lazy(status, "Failed determining amount of free memory for " + identify(handle));
 	return free_mem_in_bytes;
 }
 
 inline void set_cache_preference(handle_t handle, multiprocessor_cache_preference_t preference)
 {
-	auto status = cuCtxSetCacheConfig(static_cast<CUfunc_cache>(preference));
+	auto status = hipCtxSetCacheConfig(static_cast<hipFuncCache_t>(preference));
 	throw_if_error_lazy(status,
 		"Setting the multiprocessor L1/Shared Memory cache distribution preference to " +
 		::std::to_string(static_cast<unsigned>(preference)) + " for " + identify(handle));
@@ -146,8 +146,8 @@ inline void set_cache_preference(handle_t handle, multiprocessor_cache_preferenc
 
 inline multiprocessor_cache_preference_t cache_preference(handle_t handle)
 {
-	CUfunc_cache preference;
-	auto status = cuCtxGetCacheConfig(&preference);
+	hipFuncCache_t preference;
+	auto status = hipCtxGetCacheConfig(&preference);
 	throw_if_error_lazy(status,
 		"Obtaining the multiprocessor L1/Shared Memory cache distribution preference for " + identify(handle));
 	return static_cast<multiprocessor_cache_preference_t>(preference);
@@ -155,15 +155,15 @@ inline multiprocessor_cache_preference_t cache_preference(handle_t handle)
 
 inline shared_memory_bank_size_t shared_memory_bank_size(handle_t handle)
 {
-	CUsharedconfig bank_size;
-	auto status = cuCtxGetSharedMemConfig(&bank_size);
+	hipSharedMemConfig bank_size;
+	auto status = hipCtxGetSharedMemConfig(&bank_size);
 	throw_if_error_lazy(status, "Obtaining the multiprocessor shared memory bank size for " + identify(handle));
 	return static_cast<shared_memory_bank_size_t>(bank_size);
 }
 
 inline void set_shared_memory_bank_size(handle_t handle, shared_memory_bank_size_t bank_size)
 {
-	auto status = cuCtxSetSharedMemConfig(static_cast<CUsharedconfig>(bank_size));
+	auto status = hipCtxSetSharedMemConfig(static_cast<hipSharedMemConfig>(bank_size));
 	throw_if_error_lazy(status, "Setting the multiprocessor shared memory bank size for " + identify(handle));
 }
 
@@ -181,13 +181,13 @@ inline void synchronize(device::id_t device_id, context::handle_t handle)
 
 inline void destroy(handle_t handle)
 {
-	auto status = cuCtxDestroy(handle);
+	auto status = hipCtxDestroy(handle);
 	throw_if_error_lazy(status, "Failed destroying " + identify(handle));
 }
 
 inline void destroy(handle_t handle, device::id_t device_index)
 {
-	auto status = cuCtxDestroy(handle);
+	auto status = hipCtxDestroy(handle);
 	throw_if_error_lazy(status, "Failed destroying " + identify(handle, device_index));
 }
 
@@ -223,7 +223,7 @@ public: // types
 	using flags_type = context::flags_t;
 
 	static_assert(
-		::std::is_same<::std::underlying_type<CUsharedconfig>::type, ::std::underlying_type<cudaSharedMemConfig>::type>::value,
+		::std::is_same<::std::underlying_type<hipSharedMemConfig>::type, ::std::underlying_type<hipSharedMemConfig>::type>::value,
 		"Unexpected difference between enumerators used for the same purpose by the CUDA runtime and the CUDA driver");
 
 public: // inner classes
@@ -361,7 +361,7 @@ public: // other non-mutator methods
 	size_t stack_size() const
 	{
 		CAW_SET_SCOPE_CONTEXT(handle_);
-		return context::detail_::get_limit(CU_LIMIT_STACK_SIZE);
+		return context::detail_::get_limit(hipLimitStackSize);
 	}
 
 	/**
@@ -372,7 +372,7 @@ public: // other non-mutator methods
 	context::limit_value_t printf_buffer_size() const
 	{
 		CAW_SET_SCOPE_CONTEXT(handle_);
-		return context::detail_::get_limit(CU_LIMIT_PRINTF_FIFO_SIZE);
+		return context::detail_::get_limit(hipLimitPrintfFifoSize);
 	}
 
 	/**
@@ -383,12 +383,12 @@ public: // other non-mutator methods
 	context::limit_value_t memory_allocation_heap_size() const
 	{
 		CAW_SET_SCOPE_CONTEXT(handle_);
-		return context::detail_::get_limit(CU_LIMIT_MALLOC_HEAP_SIZE);
+		return context::detail_::get_limit(hipLimitMallocHeapSize);
 	}
 
 	/**
 	 * @return the maximum grid depth at which a thread can issue the device
-	 * runtime call `cudaDeviceSynchronize()` / `cuda::device::synchronize()`
+	 * runtime call `hipDeviceSynchronize()` / `cuda::device::synchronize()`
 	 * to wait on child grid launches to complete.
 	 *
 	 * @todo Is this really a feature of the context? Not of the device?
@@ -396,7 +396,8 @@ public: // other non-mutator methods
 	context::limit_value_t maximum_depth_of_child_grid_sync_calls() const
 	{
 		CAW_SET_SCOPE_CONTEXT(handle_);
-		return context::detail_::get_limit(CU_LIMIT_DEV_RUNTIME_SYNC_DEPTH);
+		// return context::detail_::get_limit(CU_LIMIT_DEV_RUNTIME_SYNC_DEPTH);
+		return 1;
 	}
 
 	global_memory_type memory() const
@@ -411,8 +412,9 @@ public: // other non-mutator methods
 	 */
 	context::limit_value_t maximum_outstanding_kernel_launches() const
 	{
-		CAW_SET_SCOPE_CONTEXT(handle_);
-		return context::detail_::get_limit(CU_LIMIT_DEV_RUNTIME_PENDING_LAUNCH_COUNT);
+		// I don't know if this maximum is an error if it's exceeded.
+		// Just set to something large in the short-term.
+		return 1024;
 	}
 
 #if CUDA_VERSION >= 10000
@@ -463,7 +465,7 @@ public: // other non-mutator methods
 	{
 		CAW_SET_SCOPE_CONTEXT(handle_);
 		context::stream_priority_range_t result;
-		auto status = cuCtxGetStreamPriorityRange(&result.least, &result.greatest);
+		auto status = hipDeviceGetStreamPriorityRange(&result.least, &result.greatest);
 		throw_if_error_lazy(status, "Obtaining the priority range for streams within " +
 			context::detail_::identify(*this));
 		return result;
@@ -477,8 +479,8 @@ public: // other non-mutator methods
 
 	version_t api_version() const
 	{
-		unsigned int raw_version;
-		auto status = cuCtxGetApiVersion(handle_, &raw_version);
+		int raw_version;
+		auto status = hipCtxGetApiVersion(handle_, &raw_version);
 		throw_if_error_lazy(status, "Failed obtaining the API version for " + context::detail_::identify(*this));
 		return version_t::from_single_number(static_cast<combined_version_t>(raw_version));
 	}
@@ -499,12 +501,12 @@ public: // methods which mutate the context, but not its wrapper
 	 */
 	context::host_thread_sync_scheduling_policy_t sync_scheduling_policy() const
 	{
-		return context::host_thread_sync_scheduling_policy_t(flags() & CU_CTX_SCHED_MASK);
+		return context::host_thread_sync_scheduling_policy_t(flags() & hipDeviceScheduleMask);
 	}
 
 	bool keeping_larger_local_mem_after_resize() const
 	{
-		return flags() & CU_CTX_LMEM_RESIZE_TO_MAX;
+		return flags() & hipDeviceLmemResizeToMax;
 	}
 
 	/**
@@ -583,27 +585,27 @@ public: // other methods which don't mutate this class as a reference, but do mu
 
 	void stack_size(context::limit_value_t new_value) const
 	{
-		return set_limit(CU_LIMIT_STACK_SIZE, new_value);
+		return set_limit(hipLimitStackSize, new_value);
 	}
 
 	void printf_buffer_size(context::limit_value_t new_value) const
 	{
-		return set_limit(CU_LIMIT_PRINTF_FIFO_SIZE, new_value);
+		return set_limit(hipLimitPrintfFifoSize, new_value);
 	}
 
 	void memory_allocation_heap_size(context::limit_value_t new_value) const
 	{
-		return set_limit(CU_LIMIT_MALLOC_HEAP_SIZE, new_value);
+		return set_limit(hipLimitMallocHeapSize, new_value);
 	}
 
 	void set_maximum_depth_of_child_grid_sync_calls(context::limit_value_t new_value) const
 	{
-		return set_limit(CU_LIMIT_DEV_RUNTIME_SYNC_DEPTH, new_value);
+		// do nothing
 	}
 
 	void set_maximum_outstanding_kernel_launches(context::limit_value_t new_value) const
 	{
-		return set_limit(CU_LIMIT_DEV_RUNTIME_PENDING_LAUNCH_COUNT, new_value);
+                // do nothing?
 	}
 
 	/**
@@ -646,7 +648,7 @@ public: // constructors and destructor
 	~context_t()
 	{
 		if (owning_) {
-			cuCtxDestroy(handle_);
+			hipCtxDestroy(handle_);
 			// Note: "Swallowing" any potential error to avoid ::std::terminate(); also,
 			// because the context cannot possibly exist after this call.
 		}
@@ -713,7 +715,7 @@ inline handle_t create_and_push(
 		sync_scheduling_policy,
 		keep_larger_local_mem_after_resize);
 	handle_t handle;
-	auto status = cuCtxCreate(&handle, flags, device_id);
+	auto status = hipCtxCreate(&handle, flags, device_id);
 	throw_if_error_lazy(status, "failed creating a CUDA context associated with "
 		+ device::detail_::identify(device_id));
 	return handle;
