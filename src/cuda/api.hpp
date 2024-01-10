@@ -31,7 +31,7 @@
 #include "api/memory_pool.hpp"
 #endif
 #include "api/unique_ptr.hpp"
-#include "api/link_options.hpp"
+// #include "api/link_options.hpp"
 
 #include "api/device.hpp"
 #include "api/context.hpp"

@@ -17,7 +17,7 @@
 #include "primary_context.hpp"
 #include "error.hpp"
 
-#include <cuda_runtime_api.h>
+#include <hip/hip_runtime_api.h>
 
 #include <string>
 #include <cstring>
@@ -95,7 +95,7 @@ inline ::std::string get_name(id_t id)
 	char stack_buffer[initial_size_reservation];
 	auto buffer_size = static_cast<size_type>((sizeof(stack_buffer) / sizeof(char)));
 	auto try_getting_name = [&](char* buffer, size_type buffer_size_) -> size_type {
-		auto status = cuDeviceGetName(buffer, buffer_size-1, id);
+		auto status = hipDeviceGetName(buffer, buffer_size-1, id);
 		throw_if_error_lazy(status, "Failed obtaining the CUDA device name of device " + ::std::to_string(id));
 		buffer[buffer_size_-1] = '\0';
 		return static_cast<size_type>(::std::strlen(buffer));
@@ -162,7 +162,7 @@ public:
 	{
 		CAW_SET_SCOPE_CONTEXT(primary_context_handle());
 		int result;
-		auto status = cuDeviceCanAccessPeer(&result, id(), peer.id());
+		auto status = hipDeviceCanAccessPeer(&result, id(), peer.id());
 		throw_if_error_lazy(status, "Failed determining whether "
 			+ device::detail_::identify(id_) + " can access "
 			+ device::detail_::identify(peer.id_));
@@ -193,7 +193,7 @@ public:
 #if CUDA_VERSION >= 9020
 	uuid_t uuid () const {
 		uuid_t result;
-		auto status = cuDeviceGetUuid(&result, id_);
+		auto status = hipDeviceGetUuid(&result, id_);
 		throw_if_error_lazy(status, "Failed obtaining UUID for " + device::detail_::identify(id_));
 		return result;
 	}
@@ -227,7 +227,7 @@ public:
 
 	void set_flags(flags_type new_flags) const
 	{
-		auto status = cuDevicePrimaryCtxSetFlags(id(), new_flags);
+		auto status = hipDevicePrimaryCtxSetFlags(id(), new_flags);
 		throw_if_error_lazy(status, "Failed setting (primary context) flags for device " + device::detail_::identify(id_));
 	}
 
@@ -244,14 +244,14 @@ public:
 	properties_t properties() const
 	{
 		properties_t properties;
-		auto status = cudaGetDeviceProperties(&properties, id());
+		auto status = hipGetDeviceProperties(&properties, id());
 		throw_if_error_lazy(status, "Failed obtaining device properties for " + device::detail_::identify(id_));
 		return properties;
 	}
 
 	static device_t choose_best_match(const properties_t& properties) {
 		device::id_t id;
-		auto status = cudaChooseDevice(&id, &properties);
+		auto status = hipChooseDevice(&id, &properties);
 		throw_if_error_lazy(status, "Failed choosing a best matching device by a a property set.");
 		return device::wrap(id);
 	}
@@ -276,14 +276,14 @@ public:
 	attribute_value_t get_attribute(device::attribute_t attribute) const
 	{
 		attribute_value_t attribute_value;
-		auto status = cuDeviceGetAttribute(&attribute_value, attribute, id_);
+		auto status = hipDeviceGetAttribute(&attribute_value, attribute, id_);
 		throw_if_error_lazy(status, "Failed obtaining device properties for " + device::detail_::identify(id_));
 		return attribute_value;
 	}
 
 	grid::block_dimension_t maximum_threads_per_block() const
 	{
-		return get_attribute(CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK);
+		return get_attribute(hipDeviceAttributeMaxThreadsPerBlock);
 	}
 
 	/**
@@ -292,15 +292,15 @@ public:
 	 */
 	device::pci_location_t pci_id() const
 	{
-		auto pci_domain_id = get_attribute(CU_DEVICE_ATTRIBUTE_PCI_DOMAIN_ID);
-		auto pci_bus_id    = get_attribute(CU_DEVICE_ATTRIBUTE_PCI_BUS_ID);
-		auto pci_device_id = get_attribute(CU_DEVICE_ATTRIBUTE_PCI_DEVICE_ID);
+		auto pci_domain_id = get_attribute(hipDeviceAttributePciDomainID);
+		auto pci_bus_id    = get_attribute(hipDeviceAttributePciBusId);
+		auto pci_device_id = get_attribute(hipDeviceAttributePciDeviceId);
 		return {pci_domain_id, pci_bus_id, pci_device_id};
 	}
 
 	device::multiprocessor_count_t multiprocessor_count() const
 	{
-		return get_attribute(CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT);
+		return get_attribute(hipDeviceAttributeMultiprocessorCount);
 	}
 
 #if CUDA_VERSION >= 10020
@@ -312,7 +312,7 @@ public:
 	bool supports_virtual_memory_management() const
 	{
 #if CUDA_VERSION >= 11030
-		return get_attribute(CU_DEVICE_ATTRIBUTE_VIRTUAL_MEMORY_MANAGEMENT_SUPPORTED);
+		return get_attribute(hipDeviceAttributeVirtualMemoryManagementSupported);
 #else
 		return get_attribute(CU_DEVICE_ATTRIBUTE_VIRTUAL_ADDRESS_MANAGEMENT_SUPPORTED);
 #endif // CUDA_VERSION >= 11030
@@ -325,7 +325,7 @@ public:
 	 */
 	device::compute_architecture_t architecture() const
 	{
-		unsigned major = get_attribute(CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR);
+		unsigned major = get_attribute(hipDeviceAttributeComputeCapabilityMajor);
 		return { major };
 	}
 
@@ -335,7 +335,7 @@ public:
 	device::compute_capability_t compute_capability() const
 	{
 		auto major = architecture();
-		unsigned minor = get_attribute(CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR);
+		unsigned minor = get_attribute(hipDeviceAttributeComputeCapabilityMinor);
 		return {major, minor};
 	}
 
@@ -345,7 +345,7 @@ public:
 	 */
 	bool supports_concurrent_managed_access() const
 	{
-		return (get_attribute(CU_DEVICE_ATTRIBUTE_CONCURRENT_MANAGED_ACCESS) != 0);
+		return (get_attribute(hipDeviceAttributeConcurrentManagedAccess) != 0);
 	}
 
 	/**
@@ -354,7 +354,7 @@ public:
 	 */
 	bool supports_block_cooperation() const
 	{
-		return get_attribute(CU_DEVICE_ATTRIBUTE_COOPERATIVE_LAUNCH);
+		return get_attribute(hipDeviceAttributeCooperativeLaunch);
 	}
 
 #if CUDA_VERSION >= 11020
@@ -364,7 +364,7 @@ public:
 	 */
 	bool supports_memory_pools() const
 	{
-		return get_attribute(CU_DEVICE_ATTRIBUTE_MEMORY_POOLS_SUPPORTED);
+		return get_attribute(hipDeviceAttributeMemoryPoolsSupported);
 	}
 
 #endif // CUDA_VERSION >= 11020
@@ -432,8 +432,8 @@ public:
 	{
 		// Notes:
 		//
-		// 1. We _cannot_ use cuDevicePrimaryCtxReset() - because that one only affects
-		// the device's primary context, while cudaDeviceReset() destroys _all_ contexts for
+		// 1. We _cannot_ use hipDevicePrimaryCtxReset() - because that one only affects
+		// the device's primary context, while hipDeviceReset() destroys _all_ contexts for
 		// the device.
 		// 2. We don't need the primary context to be active here, so not using the usual
 		//    primary_context_handle() getter mechanism.
@@ -442,7 +442,7 @@ public:
 			device::primary_context::detail_::obtain_and_increase_refcount(id_) :
 			primary_context_handle_;
 		CAW_SET_SCOPE_CONTEXT(pc_handle);
-		auto status = cudaDeviceReset();
+		auto status = hipDeviceReset();
 		throw_if_error_lazy(status, "Resetting " + device::detail_::identify(id_));
 	}
 
@@ -557,24 +557,24 @@ public:
 
 	context::host_thread_sync_scheduling_policy_t sync_scheduling_policy() const
 	{
-		return context::host_thread_sync_scheduling_policy_t(flags() & CU_CTX_SCHED_MASK);
+		return context::host_thread_sync_scheduling_policy_t(flags() & hipDeviceScheduleMask);
 	}
 
 	void set_sync_scheduling_policy(context::host_thread_sync_scheduling_policy_t new_policy)
 	{
-		auto other_flags = flags() & ~CU_CTX_SCHED_MASK;
+		auto other_flags = flags() & ~hipDeviceScheduleMask;
 		set_flags(other_flags | static_cast<flags_type>(new_policy));
 	}
 
 	bool keeping_larger_local_mem_after_resize() const
 	{
-		return flags() & CU_CTX_LMEM_RESIZE_TO_MAX;
+		return flags() & hipDeviceLmemResizeToMax;
 	}
 
 	void keep_larger_local_mem_after_resize(bool keep = true)
 	{
-		auto other_flags = flags() & ~CU_CTX_LMEM_RESIZE_TO_MAX;
-		flags_type new_flags = other_flags | (keep ? CU_CTX_LMEM_RESIZE_TO_MAX : 0);
+		auto other_flags = flags() & ~hipDeviceLmemResizeToMax;
+		flags_type new_flags = other_flags | (keep ? hipDeviceLmemResizeToMax : 0);
 		set_flags(new_flags);
 	}
 
@@ -734,7 +734,7 @@ inline device_t get(id_t id)
  * locations, which can be either a GPU device or the CPU; any other use will likely
  * result in a runtime error being thrown.
  */
-inline device_t cpu() { return get(CU_DEVICE_CPU); }
+inline device_t cpu() { return get(hipCpuDeviceId); }
 
 namespace current {
 
