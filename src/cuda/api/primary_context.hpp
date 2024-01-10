@@ -28,18 +28,18 @@ struct state_t {
 inline state_t raw_state(device::id_t device_id)
 {
 	state_t result;
-	auto status = cuDevicePrimaryCtxGetState(device_id, &result.flags, &result.is_active);
+	auto status = hipDevicePrimaryCtxGetState(device_id, &result.flags, &result.is_active);
 	throw_if_error(status, "Failed obtaining the state of the primary context for " + device::detail_::identify(device_id));
 	return result;
 }
 
 inline context::flags_t flags(device::id_t device_id)
 {
-	return raw_state(device_id).flags & ~CU_CTX_MAP_HOST;
-		// CU_CTX_MAP_HOST is ignored since CUDA 3.2, and has been officially
+	return raw_state(device_id).flags & ~hipDeviceMapHost;
+		// hipDeviceMapHost is ignored since CUDA 3.2, and has been officially
 		// deprecated in CUDA 11. Moreover, in CUDA 11 (and possibly other versions),
-		// the flags you get with cuDevicePrimaryCtxGetState() and cuCtxGetFlag()
-		// differ on this particular flag - and cuDevicePrimaryCtxSetFlags() doesn't
+		// the flags you get with hipDevicePrimaryCtxGetState() and cuCtxGetFlag()
+		// differ on this particular flag - and hipDevicePrimaryCtxSetFlags() doesn't
 		// like seeing it.
 }
 
@@ -51,7 +51,7 @@ inline bool is_active(device::id_t device_id)
 // We used this wrapper for a one-linear to track PC releases
 inline status_t decrease_refcount_nothrow(device::id_t device_id) noexcept
 {
-	auto result = cuDevicePrimaryCtxRelease(device_id);
+	auto result = hipDevicePrimaryCtxRelease(device_id);
 	return result;
 }
 
@@ -64,7 +64,7 @@ inline void decrease_refcount(device::id_t device_id)
 inline handle_t obtain_and_increase_refcount(device::id_t device_id)
 {
 	handle_t primary_context_handle;
-	auto status = cuDevicePrimaryCtxRetain(&primary_context_handle, device_id);
+	auto status = hipDevicePrimaryCtxRetain(&primary_context_handle, device_id);
 	throw_if_error_lazy(status,
 		"Failed obtaining (and possibly creating, and adding a reference count to) the primary context for "
 		+ device::detail_::identify(device_id));
@@ -152,7 +152,7 @@ protected:
 
 	void set_flags(flags_type new_flags) const
 	{
-		auto status = cuDevicePrimaryCtxSetFlags(device_id_, new_flags);
+		auto status = hipDevicePrimaryCtxSetFlags(device_id_, new_flags);
 		throw_if_error(status, "Failed setting primary context flags for " + device::detail_::identify(device_id_));
 	}
 
@@ -207,19 +207,19 @@ public: // mutators of the proxied primary context, but not of the proxy
 
 	void set_sync_scheduling_policy(context::host_thread_sync_scheduling_policy_t new_policy) const
 	{
-		auto other_flags = flags() & ~CU_CTX_SCHED_MASK;
+		auto other_flags = flags() & ~hipDeviceScheduleMask;
 		set_flags(other_flags | static_cast<flags_type>(new_policy));
 	}
 
 	bool keeping_larger_local_mem_after_resize() const
 	{
-		return flags() & CU_CTX_LMEM_RESIZE_TO_MAX;
+		return flags() & hipDeviceLmemResizeToMax;
 	}
 
 	void keep_larger_local_mem_after_resize(bool keep = true) const
 	{
-		auto other_flags = flags() & ~CU_CTX_LMEM_RESIZE_TO_MAX;
-		flags_type new_flags = other_flags | (keep ? CU_CTX_LMEM_RESIZE_TO_MAX : 0);
+		auto other_flags = flags() & ~hipDeviceLmemResizeToMax;
+		flags_type new_flags = other_flags | (keep ? hipDeviceLmemResizeToMax : 0);
 		set_flags(new_flags);
 	}
 
