@@ -15,11 +15,11 @@
 #include "context.hpp"
 #include "error.hpp"
 
-#include <cuda_runtime.h>
-#include <cuda.h>
+#include <hip/hip_runtime.h>
+#include <hip/hip_runtime.h>
 
 #ifndef CUDA_NO_HALF
-#include <cuda_fp16.h>
+#include <hip/hip_fp16.h>
 #endif
 
 namespace cuda {
@@ -31,9 +31,9 @@ class array_t;
 
 namespace array {
 
-using handle_t = CUarray;
+using handle_t = hipArray_t;
 template <dimensionality_t NumDimensions>
-using descriptor_t = typename ::std::conditional<NumDimensions == 2, CUDA_ARRAY_DESCRIPTOR, CUDA_ARRAY3D_DESCRIPTOR>::type;
+using descriptor_t = typename ::std::conditional<NumDimensions == 2, HIP_ARRAY_DESCRIPTOR, HIP_ARRAY3D_DESCRIPTOR>::type;
 
 /**
  * @brief Wrap an existing CUDA array in an @ref array_t instance.
@@ -49,22 +49,22 @@ namespace detail_ {
 
 template <typename T> struct format_specifier {};
 
-template <> struct format_specifier<uint8_t > { static constexpr const CUarray_format value = CU_AD_FORMAT_UNSIGNED_INT8;  };
-template <> struct format_specifier<uint16_t> { static constexpr const CUarray_format value = CU_AD_FORMAT_UNSIGNED_INT16; };
-template <> struct format_specifier<uint32_t> { static constexpr const CUarray_format value = CU_AD_FORMAT_UNSIGNED_INT32; };
-template <> struct format_specifier<int8_t  > { static constexpr const CUarray_format value = CU_AD_FORMAT_SIGNED_INT8;    };
-template <> struct format_specifier<int16_t > { static constexpr const CUarray_format value = CU_AD_FORMAT_SIGNED_INT16;   };
-template <> struct format_specifier<int32_t > { static constexpr const CUarray_format value = CU_AD_FORMAT_SIGNED_INT32;   };
+template <> struct format_specifier<uint8_t > { static constexpr const hipArray_Format value = HIP_AD_FORMAT_UNSIGNED_INT8;  };
+template <> struct format_specifier<uint16_t> { static constexpr const hipArray_Format value = HIP_AD_FORMAT_UNSIGNED_INT16; };
+template <> struct format_specifier<uint32_t> { static constexpr const hipArray_Format value = HIP_AD_FORMAT_UNSIGNED_INT32; };
+template <> struct format_specifier<int8_t  > { static constexpr const hipArray_Format value = HIP_AD_FORMAT_SIGNED_INT8;    };
+template <> struct format_specifier<int16_t > { static constexpr const hipArray_Format value = HIP_AD_FORMAT_SIGNED_INT16;   };
+template <> struct format_specifier<int32_t > { static constexpr const hipArray_Format value = HIP_AD_FORMAT_SIGNED_INT32;   };
 #ifndef CUDA_NO_HALF
-template <> struct format_specifier<half    > { static constexpr const CUarray_format value = CU_AD_FORMAT_HALF;           };
+template <> struct format_specifier<half    > { static constexpr const hipArray_Format value = HIP_AD_FORMAT_HALF;           };
 #endif
-template <> struct format_specifier<float   > { static constexpr const CUarray_format value = CU_AD_FORMAT_FLOAT;          };
+template <> struct format_specifier<float   > { static constexpr const hipArray_Format value = HIP_AD_FORMAT_FLOAT;          };
 
 template<typename T>
 handle_t create_in_current_context(dimensions_t<3> dimensions)
 {
 	handle_t handle;
-	CUDA_ARRAY3D_DESCRIPTOR descriptor;
+	HIP_ARRAY3D_DESCRIPTOR descriptor;
 	descriptor.Width = dimensions.width;
 	descriptor.Height = dimensions.height;
 	descriptor.Depth = dimensions.depth;
@@ -74,7 +74,7 @@ handle_t create_in_current_context(dimensions_t<3> dimensions)
 		// file an issue.
 	descriptor.Flags = 0;
 
-	auto status = cuArray3DCreate(&handle, &descriptor);
+	auto status = hipArray3DCreate(&handle, &descriptor);
 	throw_if_error_lazy(status, "failed allocating 3D CUDA array");
 	return handle;
 }
@@ -82,13 +82,13 @@ handle_t create_in_current_context(dimensions_t<3> dimensions)
 template<typename T>
 handle_t create_in_current_context(dimensions_t<2> dimensions)
 {
-	CUDA_ARRAY_DESCRIPTOR descriptor;
+	HIP_ARRAY_DESCRIPTOR descriptor;
 	descriptor.Width = dimensions.width;
 	descriptor.Height = dimensions.height;
 	descriptor.Format = format_specifier<T>::value;
 	descriptor.NumChannels = 1;
 	handle_t handle;
-	auto status = cuArrayCreate(&handle, &descriptor);
+	auto status = hipArrayCreate(&handle, &descriptor);
 	throw_if_error_lazy(status, "failed allocating 2D CUDA array");
 	return handle;
 }
@@ -109,8 +109,9 @@ descriptor_t<NumDimensions> get_descriptor_in_current_context(handle_t handle);
 template <>
 inline descriptor_t<2> get_descriptor_in_current_context<2>(handle_t handle)
 {
+	// Just throw an exception for unsupported functions
 	descriptor_t<2> result;
-	auto status = cuArrayGetDescriptor(&result, handle);
+	auto status = hipErrorNotSupported;
 	throw_if_error_lazy(status,
 		::std::string("Failed obtaining the descriptor of the CUDA 2D array at ")
 		+ cuda::detail_::ptr_as_hex(handle));
@@ -120,8 +121,9 @@ inline descriptor_t<2> get_descriptor_in_current_context<2>(handle_t handle)
 template <>
 inline descriptor_t<4> get_descriptor_in_current_context<3>(handle_t handle)
 {
+	// Just throw an exception for unsupported functions
 	descriptor_t<3> result;
-	auto status = cuArray3DGetDescriptor(&result, handle);
+	auto status = hipErrorNotSupported;
 	throw_if_error_lazy(status,
 		::std::string("Failed obtaining the descriptor of the CUDA 3D array at ")
 		+ cuda::detail_::ptr_as_hex(handle));
@@ -219,7 +221,7 @@ public:
 	{
 		CAW_SET_SCOPE_CONTEXT(context_handle_);
 		if (handle_) {
-			auto status = cuArrayDestroy(handle_);
+			auto status = hipArrayDestroy(handle_);
 			// Note: Throwing in a noexcept destructor; if the free'ing fails, the program
 			// will likely terminate
 			throw_if_error_lazy(status, "Failed destroying CUDA array " + cuda::detail_::ptr_as_hex(handle_));
