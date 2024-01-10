@@ -12,7 +12,7 @@
 #include "array.hpp"
 #include "error.hpp"
 #include "memory.hpp"
-#include <cuda_runtime.h>
+#include <hip/hip_runtime.h>
 
 namespace cuda {
 
@@ -20,7 +20,7 @@ class texture_view;
 
 namespace texture {
 
-using raw_handle_t = CUtexObject;
+using raw_handle_t = hipTextureObject_t;
 
 /**
  * A simplifying rudimentary wrapper wrapper for the CUDA runtime API's internal
@@ -30,17 +30,17 @@ using raw_handle_t = CUtexObject;
  * @todo Could be expanded into a richer wrapper class allowing actual settings
  * of the various fields.
  */
-struct descriptor_t : public CUDA_TEXTURE_DESC {
+struct descriptor_t : public HIP_TEXTURE_DESC {
 	inline descriptor_t()
 	{
-		using parent = CUDA_TEXTURE_DESC;
+		using parent = HIP_TEXTURE_DESC;
 		memset(static_cast<parent*>(this), 0, sizeof(parent));
 		// Note: This should set the fields directly listed in the CUDA Runtime API
 		// version of this structure to 0.
-		this->addressMode[0] = CU_TR_ADDRESS_MODE_BORDER;
-		this->addressMode[1] = CU_TR_ADDRESS_MODE_BORDER;
-		this->addressMode[2] = CU_TR_ADDRESS_MODE_BORDER;
-		this->filterMode = CU_TR_FILTER_MODE_POINT;
+		this->addressMode[0] = HIP_TR_ADDRESS_MODE_BORDER;
+		this->addressMode[1] = HIP_TR_ADDRESS_MODE_BORDER;
+		this->addressMode[2] = HIP_TR_ADDRESS_MODE_BORDER;
+		this->filterMode = HIP_TR_FILTER_MODE_POINT;
 	}
 };
 
@@ -110,12 +110,12 @@ public: // constructors and destructors
 		context_handle_(arr.context_handle()), owning(true)
 	{
 		scoped_context_setter set_context(context_handle_);
-		CUDA_RESOURCE_DESC resource_descriptor;
+		HIP_RESOURCE_DESC resource_descriptor;
 		memset(&resource_descriptor, 0, sizeof(resource_descriptor));
-		resource_descriptor.resType = CU_RESOURCE_TYPE_ARRAY;
+		resource_descriptor.resType = HIP_RESOURCE_TYPE_ARRAY;
 		resource_descriptor.res.array.hArray = arr.get();
 
-		auto status = cuTexObjectCreate(&raw_view_handle, &resource_descriptor, &descriptor, nullptr);
+		auto status = hipTexObjectCreate(&raw_view_handle, &resource_descriptor, &descriptor, nullptr);
 		throw_if_error_lazy(status, "failed creating a CUDA texture object");
 	}
 
@@ -125,7 +125,7 @@ public: // operators
 	{
 		if (owning) {
 			scoped_context_setter set_context(context_handle_);
-			auto status = cuTexObjectDestroy(raw_view_handle);
+			auto status = hipTexObjectDestroy(raw_view_handle);
 			throw_if_error_lazy(status, "failed destroying texture object");
 		}
 	}
