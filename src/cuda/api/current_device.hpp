@@ -25,7 +25,7 @@
 #include "current_context.hpp"
 #include "primary_context.hpp"
 
-#include <cuda_runtime_api.h>
+#include <hip/hip_runtime_api.h>
 
 namespace cuda {
 
@@ -46,8 +46,8 @@ inline id_t get_id()
 {
 	static constexpr const id_t default_device_id { 0 };
 	context::handle_t current_context_handle;
-	auto status = cuCtxGetCurrent(&current_context_handle);
-	if (status == CUDA_ERROR_NOT_INITIALIZED) {
+	auto status = hipCtxGetCurrent(&current_context_handle);
+	if (status == hipErrorNotInitialized) {
 		initialize_driver();
 		// Should we activate and push the default device's context? probably not.
 		return default_device_id;
@@ -63,7 +63,7 @@ inline id_t get_id()
 	// ... which is the equivalent of doing:
 	//
 //	handle_t  device_id;
-//	auto status = cudaGetDevice(&device_id);
+//	auto status = hipGetDevice(&device_id);
 //	throw_if_error_lazy(status, "Failure obtaining current device id");
 //	return device_id;
 }
@@ -126,14 +126,14 @@ inline context::handle_t set_with_aux_info(
  * increased - regardless of whether the primary context was the current
  * context or not.
  *
- * @note This should be equivalent to `cudaSetDevice(device_id)` + error
+ * @note This should be equivalent to `hipSetDevice(device_id)` + error
  * checking.
  */
 inline void set(id_t device_id)
 {
 	context::handle_t current_context_handle;
-	auto status = cuCtxGetCurrent(&current_context_handle);
-	bool driver_initialized = (status == CUDA_ERROR_NOT_INITIALIZED);
+	auto status = hipCtxGetCurrent(&current_context_handle);
+	bool driver_initialized = (status == hipErrorNotInitialized);
 	set_with_aux_info(device_id, driver_initialized, current_context_handle);
 	// Note: We can safely assume the refcount was increased.
 }
@@ -150,10 +150,11 @@ inline void set(id_t device_id)
  */
 inline void set(const id_t *device_ids, size_t num_devices)
 {
+	// Throw an error because cudaSetValidDevices is not supported
 	if (num_devices > static_cast<size_t>(cuda::device::count())) {
 		throw cuda::runtime_error(status::invalid_device, "More devices listed than exist on the system");
 	}
-	auto result = cudaSetValidDevices(const_cast<int *>(device_ids), static_cast<int>(num_devices));
+	auto result = hipErrorNotSupported;
 	throw_if_error_lazy(result,
 		"Failure setting the current device to any of the list of "
 		+ ::std::to_string(num_devices) + " devices specified");
