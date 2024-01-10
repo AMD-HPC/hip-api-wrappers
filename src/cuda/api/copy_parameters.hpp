@@ -29,14 +29,8 @@ struct base_copy_params;
 
 template<>
 struct base_copy_params<2> {
-	using intra_context_type = CUDA_MEMCPY2D;
+	using intra_context_type = hip_Memcpy2D;
 	using type = intra_context_type; // Why is there no inter-context type, CUDA_MEMCPY2D_PEER ?
-};
-
-template<>
-struct base_copy_params<3> {
-	using type = CUDA_MEMCPY3D_PEER;
-	using intra_context_type = CUDA_MEMCPY3D;
 };
 
 // Note these, by default, support inter-context
@@ -289,7 +283,7 @@ inline copy_parameters_t<2>& copy_parameters_t<2>::set_endpoint_untyped(
 		else { dstHost = ptr; }
 	}
 	set_bytes_pitch(endpoint, dimensions.width);
-	(endpoint == endpoint_t::source ? srcMemoryType : dstMemoryType) = static_cast<CUmemorytype>
+	(endpoint == endpoint_t::source ? srcMemoryType : dstMemoryType) = static_cast<hipMemoryType>
 		(memory_type == memory::type_t::non_cuda ? memory::type_t::host_ : memory_type);
 	// Can't set the endpoint context - the basic data structure doesn't support that!
 	// (endpoint == endpoint_t::source ? srcContext : dstContext) = context_handle;
@@ -326,7 +320,7 @@ template<>
 template<typename T>
 copy_parameters_t<2> &copy_parameters_t<2>::set_endpoint(endpoint_t endpoint, const cuda::array_t<T, 2> &array) noexcept
 {
-	(endpoint == endpoint_t::source ? srcMemoryType : dstMemoryType) = CU_MEMORYTYPE_ARRAY;
+	(endpoint == endpoint_t::source ? srcMemoryType : dstMemoryType) = hipMemoryTypeArray;
 	(endpoint == endpoint_t::source ? srcArray : dstArray) = array.get();
 	(endpoint == endpoint_t::source ? srcDevice : dstDevice) = array.device_id();
 	// Can't set the endpoint context - the basic data structure doesn't support that!
@@ -359,9 +353,7 @@ template<>
 template<typename T>
 copy_parameters_t<3>& copy_parameters_t<3>::set_endpoint(endpoint_t endpoint, const cuda::array_t<T, 3> &array) noexcept
 {
-	(endpoint == endpoint_t::source ? srcMemoryType : dstMemoryType) = CU_MEMORYTYPE_ARRAY;
-	(endpoint == endpoint_t::source ? srcArray : dstArray) = array.get();
-	(endpoint == endpoint_t::source ? srcContext : dstContext) = array.context_handle();
+	throw ::std::invalid_argument("unimplemented function");
 	return *this;
 }
 
@@ -372,24 +364,7 @@ inline copy_parameters_t<3>& copy_parameters_t<3>::set_endpoint_untyped(
 	void *                  ptr,
 	array::dimensions_t<3>  dimensions)
 {
-	auto memory_type = memory::type_of(ptr);
-	if (memory_type == memory::type_t::array) {
-		throw ::std::invalid_argument("Attempt to use the non-array endpoint setter with array memory at " + cuda::detail_::ptr_as_hex(ptr));
-	}
-	if (memory_type == memory::type_t::unified_ or memory_type == type_t::device_)
-	{
-		(endpoint == endpoint_t::source ? srcDevice : dstDevice) = device::address(ptr);
-	}
-	else {
-		// Either memory::type_t::host or memory::type_t::non_cuda
-		if (endpoint == endpoint_t::source) { srcHost = ptr; }
-		else { dstHost = ptr; }
-	}
-	set_bytes_pitch(endpoint, dimensions.width);
-	(endpoint == endpoint_t::source ? srcHeight : dstHeight) = dimensions.height;
-	(endpoint == endpoint_t::source ? srcMemoryType : dstMemoryType) = static_cast<CUmemorytype>
-		(memory_type == memory::type_t::non_cuda ? memory::type_t::host_ : memory_type);
-	(endpoint == endpoint_t::source ? srcContext : dstContext) = context_handle;
+	throw ::std::invalid_argument("unimplemented function");
 	return *this;
 }
 
@@ -401,7 +376,7 @@ inline copy_parameters_t<2>& copy_parameters_t<2>::set_context(endpoint_t endpoi
 template<>
 inline copy_parameters_t<3>& copy_parameters_t<3>::set_context(endpoint_t endpoint, const context_t& context) noexcept
 {
-	(endpoint == endpoint_t::source ? srcContext : dstContext) = context.handle();
+	throw ::std::invalid_argument("unimplemented function");
 	return *this;
 }
 
@@ -436,8 +411,7 @@ inline copy_parameters_t<2> &copy_parameters_t<2>::clear_rest() noexcept
 template<>
 inline copy_parameters_t<3>& copy_parameters_t<3>::clear_rest() noexcept
 {
-	srcLOD = 0;
-	dstLOD = 0;
+	throw ::std::invalid_argument("unimplemented function");
 	return *this;
 }
 
@@ -461,9 +435,7 @@ inline copy_parameters_t<2>& copy_parameters_t<2>::set_bytes_extent(dimensions_t
 template<>
 inline copy_parameters_t<3>& copy_parameters_t<3>::set_bytes_extent(dimensions_type extent) noexcept
 {
-	WidthInBytes = extent.width;
-	Height = extent.height;
-	Depth = extent.depth;
+	throw ::std::invalid_argument("unimplemented function");
 	return *this;
 }
 
@@ -479,9 +451,7 @@ template<>
 inline copy_parameters_t<3>&
 copy_parameters_t<3>::set_bytes_offset(endpoint_t endpoint, dimensions_type offset) noexcept
 {
-	(endpoint == endpoint_t::source ? srcXInBytes : dstXInBytes) = offset.width;
-	(endpoint == endpoint_t::source ? srcY : dstY) = offset.height;
-	(endpoint == endpoint_t::source ? srcZ : dstZ) = offset.depth;
+	throw ::std::invalid_argument("unimplemented function");
 	return *this;
 }
 
@@ -513,44 +483,7 @@ copy_parameters_t<2> &copy_parameters_t<2>::set_offset(endpoint_t endpoint, dime
 copy_parameters_t<3>::intra_context_type
 inline as_intra_context_parameters(const copy_parameters_t<3>& params)
 {
-	if (params.srcDevice != params.dstDevice) {
-		throw ::std::invalid_argument("Attempt to use inter-device copy parameters for an intra-context copy");
-	}
-	if (params.srcContext != params.dstContext) {
-		throw ::std::invalid_argument("Attempt to use inter-context copy parameters for an intra-context copy");
-	}
-
-	// TODO: Use designated initializers in C++20
-	copy_parameters_t<3>::intra_context_type result;
-
-	result.srcXInBytes = params.srcXInBytes;
-	result.srcY = params.srcY;
-	result.srcZ = params.srcZ;
-	result.srcLOD = params.srcLOD;
-	result.srcMemoryType = params.srcMemoryType;
-	result.srcHost = params.srcHost;
-	result.srcDevice = params.srcDevice;
-	result.srcArray = params.srcArray;
-	result.reserved0 = nullptr; // srcContext
-	result.srcPitch = params.srcPitch;
-	result.srcHeight = params.srcHeight;
-
-	result.dstXInBytes = params.dstXInBytes;
-	result.dstY = params.dstY;
-	result.dstZ = params.dstZ;
-	result.dstLOD = params.dstLOD;
-	result.dstMemoryType = params.dstMemoryType;
-	result.dstHost = params.dstHost;
-	result.dstDevice = params.dstDevice;
-	result.dstArray = params.dstArray;
-	result.reserved1 = nullptr;
-	result.dstPitch = params.dstPitch;
-	result.dstHeight = params.dstHeight;
-
-	result.WidthInBytes = params.WidthInBytes;
-	result.Height = params.Height;
-	result.Depth = params.Depth;
-	return result;
+	throw ::std::invalid_argument("unimplemented function");
 }
 
 } //namespace memory
