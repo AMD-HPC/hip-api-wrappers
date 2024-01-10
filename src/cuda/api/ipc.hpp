@@ -28,7 +28,7 @@
 #include "types.hpp"
 #include "error.hpp"
 
-#include <cuda_runtime_api.h>
+#include <hip/hip_runtime_api.h>
 
 #include <string>
 
@@ -47,7 +47,7 @@ namespace ipc {
  * The concrete value passed between processes, used to tell
  * the CUDA Runtime API which memory area is desired.
  */
-using ptr_handle_t = CUipcMemHandle;
+using ptr_handle_t = hipIpcMemHandle_t;
 
 class imported_ptr_t;
 imported_ptr_t wrap(void * ptr,	bool owning) noexcept;
@@ -66,8 +66,8 @@ namespace detail_ {
  */
 inline void* import(const ptr_handle_t& handle)
 {
-	CUdeviceptr device_ptr;
-	auto status = cuIpcOpenMemHandle(&device_ptr, handle, CU_IPC_MEM_LAZY_ENABLE_PEER_ACCESS);
+	hipDeviceptr_t device_ptr;
+	auto status = hipIpcOpenMemHandle(&device_ptr, handle, hipIpcMemLazyEnablePeerAccess);
 	throw_if_error_lazy(status, "Failed obtaining a device pointer from an IPC memory handle");
 	return memory::as_pointer(device_ptr);
 }
@@ -79,7 +79,7 @@ inline void* import(const ptr_handle_t& handle)
  */
 inline void unmap(void* ipc_mapped_ptr)
 {
-	auto status = cuIpcCloseMemHandle(device::address(ipc_mapped_ptr));
+	auto status = hipIpcCloseMemHandle(device::address(ipc_mapped_ptr));
 	throw_if_error_lazy(status, "Failed unmapping IPC memory mapped to " + cuda::detail_::ptr_as_hex(ipc_mapped_ptr));
 }
 
@@ -100,7 +100,7 @@ inline void unmap(void* ipc_mapped_ptr)
 inline ptr_handle_t export_(void* device_ptr)
 {
 	ptr_handle_t handle;
-	auto status = cuIpcGetMemHandle(&handle, device::address(device_ptr));
+	auto status = hipIpcGetMemHandle(&handle, device::address(device_ptr));
 	throw_if_error_lazy(status, "Failed producing an IPC memory handle for device pointer "
 		+ cuda::detail_::ptr_as_hex(device_ptr));
 	return handle;
@@ -190,8 +190,8 @@ pool::handle_t import(const shared_handle_t<Kind>& shared_pool_handle)
 	memory::pool::handle_t result;
 	static constexpr const unsigned long long flags { 0 };
 	void * ptr_to_handle = static_cast<void*>(const_cast<shared_handle_t<Kind>*>(&shared_pool_handle));
-	auto status = cuMemPoolImportFromShareableHandle(
-		&result, ptr_to_handle, static_cast<CUmemAllocationHandleType>(Kind), flags);
+	auto status = hipMemPoolImportFromShareableHandle(
+		&result, ptr_to_handle, static_cast<hipMemAllocationHandleType>(Kind), flags);
 	throw_if_error_lazy(status, "Importing an IPC-shared memory pool handle");
 	return result;
 }
@@ -205,11 +205,11 @@ pool_t import(const device_t& device, const shared_handle_t<Kind>& shared_pool_h
  * The concrete value passed between processes, used to tell
  * the CUDA Runtime API which pool-allocated memory area is desired.
  */
-using ptr_handle_t = CUmemPoolPtrExportData;
+using ptr_handle_t = hipMemPoolPtrExportData;
 
 inline ptr_handle_t export_ptr(void* pool_allocated) {
 	ptr_handle_t handle;
-	auto status = cuMemPoolExportPointer(&handle, device::address(pool_allocated));
+	auto status = hipMemPoolExportPointer(&handle, device::address(pool_allocated));
 	throw_if_error_lazy(status,
 		"Failed producing an IPC handle for memory-pool-allocated pointer "
 		+ cuda::detail_::ptr_as_hex(pool_allocated));
@@ -220,8 +220,8 @@ namespace detail_ {
 
 inline void* import_ptr(const pool::handle_t pool_handle, const ptr_handle_t& handle)
 {
-	CUdeviceptr imported;
-	auto status = cuMemPoolImportPointer(&imported, pool_handle, const_cast<ptr_handle_t*>(&handle));
+	hipDeviceptr_t imported;
+	auto status = hipMemPoolImportPointer(&imported, pool_handle, const_cast<ptr_handle_t*>(&handle));
 	throw_if_error_lazy(status, "Failed importing an IPC-exported a pool-allocated pointer");
 	return as_pointer(imported);
 }
@@ -258,14 +258,14 @@ namespace ipc {
  * The concrete value passed between processes, used to tell
  * the CUDA Runtime API which event is desired.
  */
-using handle_t = CUipcEventHandle;
+using handle_t = hipIpcEventHandle_t;
 
 namespace detail_ {
 
 inline handle_t export_(event::handle_t event_handle)
 {
 	handle_t ipc_handle;
-	auto status = cuIpcGetEventHandle(&ipc_handle, event_handle);
+	auto status = hipIpcGetEventHandle(&ipc_handle, event_handle);
 	throw_if_error_lazy(status, "Failed obtaining an IPC event handle for " +
 		event::detail_::identify(event_handle));
 	return ipc_handle;
@@ -274,7 +274,7 @@ inline handle_t export_(event::handle_t event_handle)
 inline event::handle_t import(const handle_t& handle)
 {
 	event::handle_t event_handle;
-	auto status = cuIpcOpenEventHandle(&event_handle, handle);
+	auto status = hipIpcOpenEventHandle(&event_handle, handle);
 	throw_if_error_lazy(status, "Failed obtaining an event handle from an IPC event handle");
 	return event_handle;
 }
