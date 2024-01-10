@@ -16,8 +16,7 @@
 #include "types.hpp"
 #include "current_context.hpp"
 
-#include <cuda_runtime.h>
-#include <cuda.h>
+#include <hip/hip_runtime.h>
 
 #if CUDA_VERSION < 11000
 #define CAN_GET_APRIORI_KERNEL_HANDLE 0
@@ -36,7 +35,7 @@ class kernel_t;
 
 namespace kernel {
 
-using shared_memory_size_determiner_t = size_t (CUDA_CB *)(int block_size);
+using shared_memory_size_determiner_t = size_t (*)(int block_size);
 
 /**
  * Obtain a proxy object for a CUDA kernel
@@ -61,7 +60,7 @@ inline ::std::string identify(const kernel_t& kernel);
 
 static const char* attribute_name(int attribute_index)
 {
-	// Note: These correspond to the values of enum CUfunction_attribute_enum
+	// Note: These correspond to the values of enum hipFunction_attribute
 	static const char* names[] = {
 		"Maximum number of threads per block",
 		"Statically-allocated shared memory size in bytes",
@@ -80,7 +79,7 @@ static const char* attribute_name(int attribute_index)
 inline attribute_value_t get_attribute_in_current_context(handle_t handle, attribute_t attribute)
 {
 	kernel::attribute_value_t attribute_value;
-	auto result = cuFuncGetAttribute(&attribute_value,  attribute, handle);
+	auto result = hipFuncGetAttribute(&attribute_value,  attribute, handle);
 	throw_if_error_lazy(result,
 		::std::string("Failed obtaining attribute ") + attribute_name(attribute)
 	);
@@ -156,13 +155,13 @@ public: // non-mutators
 	VIRTUAL_UNLESS_CAN_GET_APRIORI_KERNEL_HANDLE
 	cuda::device::compute_capability_t ptx_version() const
 	{
-		auto raw_attribute = get_attribute(CU_FUNC_ATTRIBUTE_PTX_VERSION);
+		auto raw_attribute = get_attribute(HIP_FUNC_ATTRIBUTE_PTX_VERSION);
 		return device::compute_capability_t::from_combined_number(raw_attribute);
 	}
 
 	VIRTUAL_UNLESS_CAN_GET_APRIORI_KERNEL_HANDLE
 	cuda::device::compute_capability_t binary_compilation_target_architecture() const {
-		auto raw_attribute = get_attribute(CU_FUNC_ATTRIBUTE_BINARY_VERSION);
+		auto raw_attribute = get_attribute(HIP_FUNC_ATTRIBUTE_BINARY_VERSION);
 		return device::compute_capability_t::from_combined_number(raw_attribute);
 	}
 
@@ -176,7 +175,7 @@ public: // non-mutators
 	VIRTUAL_UNLESS_CAN_GET_APRIORI_KERNEL_HANDLE
 	grid::block_dimension_t maximum_threads_per_block() const
 	{
-		return get_attribute(CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK);
+		return get_attribute(HIP_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK);
 	}
 
 #if CUDA_VERSION >= 10000
@@ -271,12 +270,12 @@ public: // methods mutating the kernel-in-context, but not this reference object
 				"representation range for kernel attribute values");
 		}
 		// TODO: Consider a check in debug mode for the value being within range
-		set_attribute(CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,amount_required_by_kernel_);
+		set_attribute(HIP_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,amount_required_by_kernel_);
 	}
 
 	memory::shared::size_t get_maximum_dynamic_shared_memory_per_block() const
 	{
-		return get_attribute(CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES);
+		return get_attribute(HIP_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES);
 	}
 
 	/**
@@ -300,7 +299,7 @@ public: // methods mutating the kernel-in-context, but not this reference object
 	void set_cache_preference(multiprocessor_cache_preference_t preference) const
 	{
 		context::current::detail_::scoped_override_t set_context_for_this_context(context_handle_);
-		auto result = cuFuncSetCacheConfig(handle(), static_cast<CUfunc_cache>(preference));
+		auto result = hipFuncSetCacheConfig(handle(), static_cast<hipFuncCache_t>(preference));
 		throw_if_error_lazy(result,
 			"Setting the multiprocessor L1/Shared Memory cache distribution preference for a "
 			"CUDA device function");
@@ -316,7 +315,7 @@ public: // methods mutating the kernel-in-context, but not this reference object
 	{
 		// TODO: Need to set a context, not a device
 		context::current::detail_::scoped_override_t set_context_for_this_context(context_handle_);
-		auto result = cuFuncSetSharedMemConfig(handle(), static_cast<CUsharedconfig>(config) );
+		auto result = hipFuncSetSharedMemConfig(handle(), static_cast<hipSharedMemConfig>(config) );
 		throw_if_error_lazy(result, "Failed setting the shared memory bank size");
 	}
 
@@ -393,8 +392,8 @@ inline grid::dimension_t max_active_blocks_per_multiprocessor(
 {
 	int result;
 		// We don't need the initialization, but NVCC backed by GCC 8 warns us about it.
-	auto flags = static_cast<unsigned>(disable_caching_override) ? CU_OCCUPANCY_DISABLE_CACHING_OVERRIDE : CU_OCCUPANCY_DEFAULT;
-	cuda::status_t status = cuOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(
+	auto flags = hipOccupancyDefault;
+	cuda::status_t status = hipModuleOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(
 		&result, handle, static_cast<int>(block_size_in_threads), dynamic_shared_memory_per_block, flags);
 	throw_if_error_lazy(status,
 		"Determining the maximum occupancy in blocks per multiprocessor, given the block size and the amount of dynamic memory per block");
@@ -405,9 +404,9 @@ inline grid::dimension_t max_active_blocks_per_multiprocessor(
 // Note: If determine_shared_mem_by_block_size is not null, fixed_shared_mem_size is ignored;
 // if block_size_limit is 0, it is ignored.
 inline grid::composite_dimensions_t min_grid_params_for_max_occupancy(
-	CUfunction                     kernel_handle,
+	hipFunction_t                     kernel_handle,
 	cuda::device::id_t             device_id,
-	CUoccupancyB2DSize             determine_shared_mem_by_block_size,
+	void*             determine_shared_mem_by_block_size,
 	cuda::memory::shared::size_t   fixed_shared_mem_size,
 	cuda::grid::block_dimension_t  block_size_limit,
 	bool                           disable_caching_override)
@@ -417,13 +416,12 @@ inline grid::composite_dimensions_t min_grid_params_for_max_occupancy(
 	// Note: only initializing the values her because of a
 	// spurious (?) compiler warning about potential uninitialized use.
 
-	auto result =  cuOccupancyMaxPotentialBlockSizeWithFlags(
+	auto result =  hipModuleOccupancyMaxPotentialBlockSizeWithFlags(
 		&min_grid_size_in_blocks, &block_size,
 		kernel_handle,
-		determine_shared_mem_by_block_size,
 		fixed_shared_mem_size,
 		static_cast<int>(block_size_limit),
-		disable_caching_override ? CU_OCCUPANCY_DISABLE_CACHING_OVERRIDE : CU_OCCUPANCY_DEFAULT
+		disable_caching_override ? CU_OCCUPANCY_DISABLE_CACHING_OVERRIDE : hipOccupancyDefault
 	);
 
 	throw_if_error_lazy(result,
@@ -455,7 +453,7 @@ inline memory::shared::size_t max_dynamic_shared_memory_per_block(
 #endif // CUDA_VERSION >= 11000
 
 /**
-* @brief See the Driver API documentation for @ref cuOccupancyMaxActiveBlocksPerMultiprocessorWithFlags
+* @brief See the Driver API documentation for @ref hipModuleOccupancyMaxActiveBlocksPerMultiprocessorWithFlags
 */
 inline grid::dimension_t max_active_blocks_per_multiprocessor(
 	const kernel_t &kernel,
