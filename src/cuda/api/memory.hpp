@@ -34,8 +34,8 @@
 #include "pointer.hpp"
 #include "current_context.hpp"
 
-#include <cuda_runtime.h> // needed, rather than cuda_runtime_api.h, e.g. for cudaMalloc
-#include <cuda.h>
+#include <hip/hip_runtime.h> // needed, rather than hip/hip_runtime_api.h, e.g. for hipMalloc
+#include <hip/hip_runtime.h>
 
 #include <memory>
 #include <cstring> // for ::std::memset
@@ -96,8 +96,8 @@ namespace detail_ {
 inline unsigned make_cuda_host_alloc_flags(allocation_options options)
 {
 	return
-		(options.portability     == portability_across_contexts::is_portable ? CU_MEMHOSTALLOC_PORTABLE      : 0) |
-		(options.write_combining == cpu_write_combining::with_wc             ? CU_MEMHOSTALLOC_WRITECOMBINED : 0);
+		(options.portability     == portability_across_contexts::is_portable ? hipHostMallocPortable      : 0) |
+		(options.write_combining == cpu_write_combining::with_wc             ? hipHostMallocWriteCombined : 0);
 }
 
 } // namespace detail_
@@ -145,9 +145,9 @@ namespace detail_ {
 inline cuda::memory::region_t allocate_in_current_context(size_t num_bytes)
 {
 	device::address_t allocated = 0;
-	// Note: the typed cudaMalloc also takes its size in bytes, apparently,
+	// Note: the typed hipMalloc also takes its size in bytes, apparently,
 	// not in number of elements
-	auto status = cuMemAlloc(&allocated, num_bytes);
+	auto status = hipMalloc(&allocated, num_bytes);
 	if (is_success(status) && allocated == 0) {
 		// Can this even happen? hopefully not
 		status = static_cast<status_t>(status::unknown);
@@ -179,9 +179,9 @@ inline region_t allocate(
 	size_t             num_bytes)
 {
 	device::address_t allocated = 0;
-	// Note: the typed cudaMalloc also takes its size in bytes, apparently,
+	// Note: the typed hipMalloc also takes its size in bytes, apparently,
 	// not in number of elements
-	auto status = cuMemAllocAsync(&allocated, num_bytes, stream_handle);
+	auto status = hipMallocAsync(&allocated, num_bytes, stream_handle);
 	if (is_success(status) && allocated == 0) {
 		// Can this even happen? hopefully not
 		status = static_cast<decltype(status)>(status::unknown);
@@ -218,7 +218,7 @@ region_t allocate(const stream_t& stream, size_t size_in_bytes);
 ///@{
 inline void free(void* ptr)
 {
-	auto result = cuMemFree(address(ptr));
+	auto result = hipFree(address(ptr));
 #ifdef CAW_THROW_ON_FREE_IN_DESTROYED_CONTEXT
 	if (result == status::success) { return; }
 #else
@@ -239,7 +239,7 @@ inline void free(
 	stream::handle_t   stream_handle,
 	void*              allocated_region_start)
 {
-	auto status = cuMemFreeAsync(device::address(allocated_region_start), stream_handle);
+	auto status = hipFreeAsync(device::address(allocated_region_start), stream_handle);
 	throw_if_error_lazy(status,
 		"Failed scheduling an asynchronous freeing of the global memory region starting at "
 		+ cuda::detail_::ptr_as_hex(allocated_region_start) + " on "
@@ -579,14 +579,14 @@ inline status_t multidim_copy(::std::integral_constant<dimensionality_t, 2>, cop
 	// TODO: Move this logic into the scoped ensurer class
 	auto context_handle = context::current::detail_::get_handle();
 	if  (context_handle != context::detail_::none) {
-		return cuMemcpy2D(&params);
+		return hipMemcpyParam2D(&params);
 	}
 	auto current_device_id = cuda::device::current::detail_::get_id();
 	context_handle = cuda::device::primary_context::detail_::obtain_and_increase_refcount(current_device_id);
 	context::current::detail_::push(context_handle);
 	// Note this _must_ be an intra-context copy, as inter-context is not supported
 	// and there's no indication of context in the relevant data structures
-	auto status = cuMemcpy2D(&params);
+	auto status = hipMemcpyParam2D(&params);
 	context::current::detail_::pop();
 	cuda::device::primary_context::detail_::decrease_refcount(current_device_id);
 	return status;
@@ -776,7 +776,7 @@ namespace detail_ {
 */
 inline void copy(void* destination, const void* source, size_t num_bytes, stream::handle_t stream_handle)
 {
-	auto result = cuMemcpyAsync(device::address(destination), device::address(source), num_bytes, stream_handle);
+	auto result = hipMemcpyAsync(device::address(destination), device::address(source), num_bytes, hipMemcpyDefault, stream_handle);
 
 	// TODO: Determine whether it was from host to device, device to host etc and
 	// add this information to the error string
@@ -810,7 +810,7 @@ inline status_t multidim_copy_in_current_context(
 {
 	// Must be an intra-context copy, because CUDA does not support 2D inter-context copies and the copy parameters
 	// structure holds no information about contexts.
-	return cuMemcpy2DAsync(&params, stream_handle);
+	return hipMemcpyParam2DAsync(&params, stream_handle);
 }
 
 template<dimensionality_t NumDimensions>
@@ -1081,7 +1081,7 @@ namespace detail_ {
 inline void set(void* start, int byte_value, size_t num_bytes, stream::handle_t stream_handle)
 {
 	// TODO: Double-check that this call doesn't require setting the current device
-	auto result = cuMemsetD8Async(address(start), static_cast<unsigned char>(byte_value), num_bytes, stream_handle);
+	auto result = hipMemsetD8Async(address(start), static_cast<unsigned char>(byte_value), num_bytes, stream_handle);
 	throw_if_error_lazy(result, "asynchronously memsetting an on-device buffer");
 }
 
@@ -1112,9 +1112,9 @@ inline void typed_set(T* start, const T& value, size_t num_elements, stream::han
 	// TODO: Consider checking for alignment when compiling without NDEBUG
 	status_t result = static_cast<status_t>(cuda::status::success);
 	switch(sizeof(T)) {
-		case(1): result = cuMemsetD8Async (address(start), reinterpret_cast<const ::std::uint8_t& >(value), num_elements, stream_handle); break;
-		case(2): result = cuMemsetD16Async(address(start), reinterpret_cast<const ::std::uint16_t&>(value), num_elements, stream_handle); break;
-		case(4): result = cuMemsetD32Async(address(start), reinterpret_cast<const ::std::uint32_t&>(value), num_elements, stream_handle); break;
+		case(1): result = hipMemsetD8Async (address(start), reinterpret_cast<const ::std::uint8_t& >(value), num_elements, stream_handle); break;
+		case(2): result = hipMemsetD16Async(address(start), reinterpret_cast<const ::std::uint16_t&>(value), num_elements, stream_handle); break;
+		case(4): result = hipMemsetD32Async(address(start), reinterpret_cast<const ::std::uint32_t&>(value), num_elements, stream_handle); break;
 	}
 	throw_if_error_lazy(result, "Setting global device memory bytes");
 }
@@ -1194,11 +1194,11 @@ inline void copy(
 	context::handle_t  source_context,
 	size_t             num_bytes)
 {
-	auto status = cuMemcpyPeer(
+	auto status = hipMemcpyPeer(
 		reinterpret_cast<device::address_t>(destination_address),
-		destination_context,
-		reinterpret_cast<device::address_t>(source_address),
-		source_context, num_bytes);
+		context::detail_::get_device_id(destination_context),
+		reinterpret_cast<device::address_t>(const_cast<void *>(source_address)),
+		context::detail_::get_device_id(source_context), num_bytes);
 	throw_if_error_lazy(status,
 		::std::string("Failed copying data between devices: From address ")
 			+ cuda::detail_::ptr_as_hex(source_address) + " in "
@@ -1262,11 +1262,11 @@ inline void copy(
 	size_t num_bytes,
 	stream::handle_t stream_handle)
 {
-	auto result = cuMemcpyPeerAsync(
+	auto result = hipMemcpyPeerAsync(
 		device::address(destination),
-		destination_context_handle,
+		context::detail_::get_device_id(destination_context_handle),
 		device::address(source),
-		source_context_handle,
+		context::detail_::get_device_id(source_context_handle),
 		num_bytes, stream_handle);
 
 	// TODO: Determine whether it was from host to device, device to host etc and
@@ -1360,7 +1360,7 @@ namespace host {
  *
  * @throws cuda::runtime_error if allocation fails for any reason
  *
- * @todo Consider a variant of this supporting the cudaHostAlloc flags
+ * @todo Consider a variant of this supporting the hipHostAlloc flags
  *
  * @param size_in_bytes the amount of memory to allocate, in bytes
  * @param options options to pass to the CUDA host-side memory allocator;
@@ -1389,11 +1389,11 @@ inline region_t allocate(size_t size_in_bytes, cpu_write_combining cpu_wc)
 /**
  * Free a region of pinned host memory which was allocated with @ref allocate.
  *
- * @note You can't just use @ref cuMemFreeHost - or you'll leak a primary context reference unit.
+ * @note You can't just use @ref hipHostFree - or you'll leak a primary context reference unit.
  */
 inline void free(void* host_ptr)
 {
-	auto result = cuMemFreeHost(host_ptr);
+	auto result = hipHostFree(host_ptr);
 #ifdef CAW_THROW_ON_FREE_IN_DESTROYED_CONTEXT
 	if (result == status::success) { return; }
 #else
@@ -1418,7 +1418,7 @@ struct deleter {
  * @brief Makes a preallocated memory region behave as though it were allocated with @ref host::allocate.
  *
  * Page-locks the memory range specified by ptr and size and maps it for the device(s) as specified by
- * flags. This memory range also is added to the same tracking mechanism as cuMemAllocHost() to
+ * flags. This memory range also is added to the same tracking mechanism as hipMemAllocHost() to
  * automatically accelerate calls to functions such as cuMemcpy().
  *
  * @param ptr A pre-allocated stretch of host memory
@@ -1427,7 +1427,7 @@ struct deleter {
  */
 inline void register_(const void *ptr, size_t size, unsigned flags)
 {
-	auto result = cuMemHostRegister(const_cast<void *>(ptr), size, flags);
+	auto result = hipHostRegister(const_cast<void *>(ptr), size, flags);
 	throw_if_error_lazy(result,
 		"Could not register and page-lock the region of " + ::std::to_string(size) +
 		" bytes of host memory at " + cuda::detail_::ptr_as_hex(ptr) +
@@ -1444,7 +1444,7 @@ inline void register_(const_region_t region, unsigned flags)
 /**
  * Whether or not the registration of the host-side pointer should map
  * it into the CUDA address space for access on the device. When true,
- * one can then obtain the device-space pointer using cudaHostGetDevicePointer().
+ * one can then obtain the device-space pointer using hipHostGetDevicePointer().
  */
 enum mapped_io_space : bool {
 	is_mapped_io_space               = true,
@@ -1454,7 +1454,7 @@ enum mapped_io_space : bool {
 /**
  * Whether or not the registration of the host-side pointer should map
  * it into the CUDA address space for access on the device. When true,
- * one can then obtain the device-space pointer using cudaHostGetDevicePointer().
+ * one can then obtain the device-space pointer using hipHostGetDevicePointer().
  */
 enum map_into_device_memory : bool {
 	map_into_device_memory           = true,
@@ -1484,9 +1484,9 @@ inline void register_(const void *ptr, size_t size,
 {
 	detail_::register_(
 		ptr, size,
-		(register_mapped_io_space ? CU_MEMHOSTREGISTER_IOMEMORY : 0)
-		| (map_into_device_space ? CU_MEMHOSTREGISTER_DEVICEMAP : 0)
-		| (make_device_side_accesible_to_all ? CU_MEMHOSTREGISTER_PORTABLE : 0)
+		(register_mapped_io_space ? hipHostRegisterIoMemory : 0)
+		| (map_into_device_space ? hipHostRegisterMapped : 0)
+		| (make_device_side_accesible_to_all ? hipHostRegisterPortable : 0)
 #if CUDA_VERSION >= 11010
 		| (considered_read_only_by_device ? CU_MEMHOSTREGISTER_READ_ONLY : 0)
 #endif // CUDA_VERSION >= 11010
@@ -1532,7 +1532,7 @@ inline void register_(const_region_t region)
 // just ended
 inline void deregister(const void *ptr)
 {
-	auto result = cuMemHostUnregister(const_cast<void *>(ptr));
+	auto result = hipHostUnregister(const_cast<void *>(ptr));
 	throw_if_error_lazy(result,
 		"Could not unregister the memory segment starting at address *a");
 }
@@ -1594,7 +1594,7 @@ struct const_region_t;
 
 namespace detail_ {
 
-using advice_t = CUmem_advise;
+using advice_t = hipMemoryAdvise;
 
 template <typename T>
 inline T get_scalar_range_attribute(managed::const_region_t region, range_attribute_t attribute);
@@ -1609,17 +1609,17 @@ struct base_region_t : public memory::detail_::base_region_t<T> {
 
 	bool is_read_mostly() const
 	{
-		return get_scalar_range_attribute<bool>(*this, CU_MEM_RANGE_ATTRIBUTE_READ_MOSTLY);
+		return get_scalar_range_attribute<bool>(*this, hipMemRangeAttributeReadMostly);
 	}
 
 	void designate_read_mostly() const
 	{
-		set_range_attribute(*this, CU_MEM_RANGE_ATTRIBUTE_READ_MOSTLY);
+		set_range_attribute(*this, hipMemRangeAttributeReadMostly);
 	}
 
 	void undesignate_read_mostly() const
 	{
-		unset_range_attribute(*this, CU_MEM_RANGE_ATTRIBUTE_READ_MOSTLY);
+		unset_range_attribute(*this, hipMemRangeAttributeReadMostly);
 	}
 
 	device_t preferred_location() const;
@@ -1653,7 +1653,7 @@ template <typename T>
 inline T get_scalar_range_attribute(managed::const_region_t region, range_attribute_t attribute)
 {
 	uint32_t attribute_value { 0 };
-	auto result = cuMemRangeGetAttribute(
+	auto result = hipMemRangeGetAttribute(
 		&attribute_value, sizeof(attribute_value), attribute, device::address(region.start()), region.size());
 	throw_if_error_lazy(result,
 		"Obtaining an attribute for a managed memory range at " + cuda::detail_::ptr_as_hex(region.start()));
@@ -1664,7 +1664,7 @@ inline T get_scalar_range_attribute(managed::const_region_t region, range_attrib
 // not called cuMemRangeSetAttribute, and uses a different enum.
 inline void advise(managed::const_region_t region, advice_t advice, cuda::device::id_t device_id)
 {
-	auto result = cuMemAdvise(device::address(region.start()), region.size(), advice, device_id);
+	auto result = hipMemAdvise(device::address(region.start()), region.size(), advice, device_id);
 	throw_if_error_lazy(result, "Setting an attribute for a managed memory range at "
 	+ cuda::detail_::ptr_as_hex(region.start()));
 }
@@ -1674,12 +1674,12 @@ inline void advise(managed::const_region_t region, advice_t advice, cuda::device
 inline advice_t as_advice(range_attribute_t attribute, bool set)
 {
 	switch (attribute) {
-	case CU_MEM_RANGE_ATTRIBUTE_READ_MOSTLY:
-		return set ? CU_MEM_ADVISE_SET_READ_MOSTLY : CU_MEM_ADVISE_UNSET_READ_MOSTLY;
-	case CU_MEM_RANGE_ATTRIBUTE_PREFERRED_LOCATION:
-		return set ? CU_MEM_ADVISE_SET_PREFERRED_LOCATION : CU_MEM_ADVISE_UNSET_PREFERRED_LOCATION;
-	case CU_MEM_RANGE_ATTRIBUTE_ACCESSED_BY:
-		return set ? CU_MEM_ADVISE_SET_ACCESSED_BY : CU_MEM_ADVISE_UNSET_ACCESSED_BY;
+	case hipMemRangeAttributeReadMostly:
+		return set ? hipMemAdviseSetReadMostly : hipMemAdviseUnsetReadMostly;
+	case hipMemRangeAttributePreferredLocation:
+		return set ? hipMemAdviseSetPreferredLocation : hipMemAdviseUnsetPreferredLocation;
+	case hipMemRangeAttributeAccessedBy:
+		return set ? hipMemAdviseSetAccessedBy : hipMemAdviseUnsetAccessedBy;
 	default:
 		throw ::std::invalid_argument(
 			"CUDA memory range attribute does not correspond to any range advice value");
@@ -1703,9 +1703,9 @@ inline void unset_range_attribute(managed::const_region_t region, range_attribut
 
 
 enum class attachment_t : unsigned {
-	global        = CU_MEM_ATTACH_GLOBAL,
-	host          = CU_MEM_ATTACH_HOST,
-	single_stream = CU_MEM_ATTACH_SINGLE,
+	global        = hipMemAttachGlobal,
+	host          = hipMemAttachHost,
+	single_stream = hipMemAttachSingle,
 	};
 
 
@@ -1727,7 +1727,7 @@ inline region_t allocate_in_current_context(
 
 	// Note: Despite the templating by T, the size is still in bytes,
 	// not in number of T's
-	auto status = cuMemAllocManaged(&allocated, num_bytes, static_cast<unsigned>(flags));
+	auto status = hipMallocManaged(&allocated, num_bytes, static_cast<unsigned>(flags));
 	if (is_success(status) && allocated == 0) {
 		// Can this even happen? hopefully not
 		status = static_cast<status_t>(status::unknown);
@@ -1740,12 +1740,12 @@ inline region_t allocate_in_current_context(
 /**
  * Free a region of managed memory which was allocated with @ref allocate_in_current_context.
  *
- * @note You can't just use @ref cuMemFree - or you'll leak a primary context reference unit.
+ * @note You can't just use @ref hipFree - or you'll leak a primary context reference unit.
  */
 ///@{
 inline void free(void* ptr)
 {
-	auto result = cuMemFree(device::address(ptr));
+	auto result = hipFree(device::address(ptr));
 	cuda::device::primary_context::detail_::decrease_refcount(cuda::device::default_device_id);
 	throw_if_error_lazy(result, "Freeing managed memory at " + cuda::detail_::ptr_as_hex(ptr));
 }
@@ -1833,7 +1833,7 @@ region_t allocate(size_t num_bytes);
  */
 inline void free(void* managed_ptr)
 {
-	auto result = cuMemFree(device::address(managed_ptr));
+	auto result = hipFree(device::address(managed_ptr));
 	throw_if_error_lazy(result,
 		"Freeing managed memory (host and device regions) at address "
 		+ cuda::detail_::ptr_as_hex(managed_ptr));
@@ -1847,17 +1847,17 @@ inline void free(region_t region)
 namespace advice {
 
 enum kind_t {
-	read_mostly = CU_MEM_RANGE_ATTRIBUTE_READ_MOSTLY,
-	preferred_location = CU_MEM_RANGE_ATTRIBUTE_PREFERRED_LOCATION,
-	accessor = CU_MEM_RANGE_ATTRIBUTE_ACCESSED_BY,
-	// Note: CU_MEM_RANGE_ATTRIBUTE_LAST_PREFETCH_LOCATION is never set
+	read_mostly = hipMemRangeAttributeReadMostly,
+	preferred_location = hipMemRangeAttributePreferredLocation,
+	accessor = hipMemRangeAttributeAccessedBy,
+	// Note: hipMemRangeAttributeLastPrefetchLocation is never set
 };
 
 namespace detail_ {
 
 inline void set(const_region_t region, kind_t advice, cuda::device::id_t device_id)
 {
-	auto result = cuMemAdvise(device::address(region.start()), region.size(),
+	auto result = hipMemAdvise(device::address(region.start()), region.size(),
 		static_cast<managed::detail_::advice_t>(advice), device_id);
 	throw_if_error_lazy(result, "Setting advice on a (managed) memory region at"
 		+ cuda::detail_::ptr_as_hex(region.start()) + " w.r.t. " + cuda::device::detail_::identify(device_id));
@@ -1878,11 +1878,11 @@ inline void prefetch(
 	cuda::device::id_t  destination,
 	stream::handle_t    source_stream_handle)
 {
-	auto result = cuMemPrefetchAsync(device::address(region.start()), region.size(), destination, source_stream_handle);
+	auto result = hipMemPrefetchAsync(device::address(region.start()), region.size(), destination, source_stream_handle);
 	throw_if_error_lazy(result,
 		"Prefetching " + ::std::to_string(region.size()) + " bytes of managed memory at address "
 		 + cuda::detail_::ptr_as_hex(region.start()) + " to " + (
-		 	(destination == CU_DEVICE_CPU) ? "the host" : cuda::device::detail_::identify(destination))  );
+		 	(destination == hipCpuDeviceId) ? "the host" : cuda::device::detail_::identify(destination))  );
 }
 
 } // namespace detail_
@@ -1920,7 +1920,7 @@ inline T* device_side_pointer_for(T* host_memory_ptr)
 {
 	device::address_t device_side_ptr;
 	auto get_device_pointer_flags = 0u; // see the CUDA runtime documentation
-	auto status = cuMemHostGetDevicePointer(
+	auto status = hipHostGetDevicePointer(
 		&device_side_ptr,
 		host_memory_ptr,
 		get_device_pointer_flags);
@@ -1950,7 +1950,7 @@ inline region_pair allocate_in_current_context(
 	// The default initialization is unnecessary, but let's play it safe
 	allocated.size_in_bytes = size_in_bytes;
 	auto flags = cuda::memory::detail_::make_cuda_host_alloc_flags(options);
-	auto status = cuMemHostAlloc(&allocated.host_side, size_in_bytes, flags);
+	auto status = hipHostAlloc(&allocated.host_side, size_in_bytes, flags);
 	if (is_success(status) && (allocated.host_side == nullptr)) {
 		// Can this even happen? hopefully not
 		status = static_cast<status_t>(status::named_t::unknown);
@@ -1973,7 +1973,7 @@ inline region_pair allocate(
 
 inline void free(void* host_side_pair)
 {
-	auto result = cuMemFreeHost(host_side_pair);
+	auto result = hipHostFree(host_side_pair);
 	throw_if_error_lazy(result, "Freeing a mapped memory region pair with host-side address "
 		+ cuda::detail_::ptr_as_hex(host_side_pair));
 }
@@ -2030,7 +2030,7 @@ inline void free_region_pair_of(void* ptr)
 	// TODO: What if the pointer is not part of a mapped region pair?
 	// We could check this...
 	void* host_side_ptr;
-	auto status = cuPointerGetAttribute (&host_side_ptr, CU_POINTER_ATTRIBUTE_HOST_POINTER, memory::device::address(ptr));
+	auto status = hipPointerGetAttribute (&host_side_ptr, HIP_POINTER_ATTRIBUTE_HOST_POINTER, memory::device::address(ptr));
 	throw_if_error_lazy(status, "Failed obtaining the host-side address of supposedly-device-side pointer "
 		+ cuda::detail_::ptr_as_hex(ptr));
 	detail_::free(host_side_ptr);
@@ -2071,9 +2071,9 @@ inline memory::region_t locate(T&& symbol)
 {
 	void *start;
 	size_t symbol_size;
-	auto api_call_result = cudaGetSymbolAddress(&start, ::std::forward<T>(symbol));
+	auto api_call_result = hipGetSymbolAddress(&start, HIP_SYMBOL(::std::forward<T>(symbol)));
 	throw_if_error_lazy(api_call_result, "Could not locate the device memory address for a symbol");
-	api_call_result = cudaGetSymbolSize(&symbol_size, ::std::forward<T>(symbol));
+	api_call_result = hipGetSymbolSize(&symbol_size, HIP_SYMBOL(::std::forward<T>(symbol)));
 	throw_if_error_lazy(api_call_result, "Could not locate the device memory address for the symbol at address"
 		+ cuda::detail_::ptr_as_hex(start));
 	return { start, symbol_size };
