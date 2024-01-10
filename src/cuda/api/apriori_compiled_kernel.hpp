@@ -1,3 +1,4 @@
+#include "hip/hip_runtime.h"
 /**
  * @file
  *
@@ -55,10 +56,10 @@ apriori_compiled_kernel_t wrap(
 
 #if ! CAN_GET_APRIORI_KERNEL_HANDLE
 /**
- * @brief a wrapper around `cudaFuncAttributes`, offering
+ * @brief a wrapper around `hipFuncAttributes`, offering
  * a few convenience member functions.
  */
-struct attributes_t : cudaFuncAttributes {
+struct attributes_t : hipFuncAttributes {
 
 	cuda::device::compute_capability_t ptx_version() const noexcept {
 		return device::compute_capability_t::from_combined_number(ptxVersion);
@@ -78,7 +79,7 @@ namespace detail_ {
 #if CUDA_VERSION < 11000
 
 template<typename UnaryFunction, class T>
-static __inline__ cudaError_t cudaOccupancyMaxPotentialBlockSizeVariableSMemWithFlags_(
+static __inline__ hipError_t cudaOccupancyMaxPotentialBlockSizeVariableSMemWithFlags_(
 	int           *minGridSize,
 	int           *blockSize,
 	T              func,
@@ -86,11 +87,11 @@ static __inline__ cudaError_t cudaOccupancyMaxPotentialBlockSizeVariableSMemWith
 	int            blockSizeLimit = 0,
 	unsigned int   flags = 0)
 {
-	cudaError_t status;
+	hipError_t status;
 
 	// Device and function properties
 	int                       device;
-	struct cudaFuncAttributes attr;
+	struct hipFuncAttributes attr;
 
 	// Limits
 	int maxThreadsPerMultiProcessor;
@@ -119,52 +120,52 @@ static __inline__ cudaError_t cudaOccupancyMaxPotentialBlockSizeVariableSMemWith
 	///////////////////////////
 
 	if (!minGridSize || !blockSize || !func) {
-		return cudaErrorInvalidValue;
+		return hipErrorInvalidValue;
 	}
 
 	//////////////////////////////////////////////
 	// Obtain device and function properties
 	//////////////////////////////////////////////
 
-	status = ::cudaGetDevice(&device);
-	if (status != cudaSuccess) {
+	status = ::hipGetDevice(&device);
+	if (status != hipSuccess) {
 		return status;
 	}
 
-	status = cudaDeviceGetAttribute(
+	status = hipDeviceGetAttribute(
 		&maxThreadsPerMultiProcessor,
-		cudaDevAttrMaxThreadsPerMultiProcessor,
+		hipDeviceAttributeMaxThreadsPerMultiProcessor,
 		device);
-	if (status != cudaSuccess) {
+	if (status != hipSuccess) {
 		return status;
 	}
 
-	status = cudaDeviceGetAttribute(
+	status = hipDeviceGetAttribute(
 		&warpSize,
-		cudaDevAttrWarpSize,
+		hipDeviceAttributeWarpSize,
 		device);
-	if (status != cudaSuccess) {
+	if (status != hipSuccess) {
 		return status;
 	}
 
-	status = cudaDeviceGetAttribute(
+	status = hipDeviceGetAttribute(
 		&devMaxThreadsPerBlock,
-		cudaDevAttrMaxThreadsPerBlock,
+		hipDeviceAttributeMaxThreadsPerBlock,
 		device);
-	if (status != cudaSuccess) {
+	if (status != hipSuccess) {
 		return status;
 	}
 
-	status = cudaDeviceGetAttribute(
+	status = hipDeviceGetAttribute(
 		&multiProcessorCount,
-		cudaDevAttrMultiProcessorCount,
+		hipDeviceAttributeMultiprocessorCount,
 		device);
-	if (status != cudaSuccess) {
+	if (status != hipSuccess) {
 		return status;
 	}
 
-	status = cudaFuncGetAttributes(&attr, func);
-	if (status != cudaSuccess) {
+	status = hipFuncGetAttributes(&attr, func);
+	if (status != hipSuccess) {
 		return status;
 	}
 
@@ -203,14 +204,14 @@ static __inline__ cudaError_t cudaOccupancyMaxPotentialBlockSizeVariableSMemWith
 
 		dynamicSMemSize = blockSizeToDynamicSMemSize(blockSizeToTry);
 
-		status = cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(
+		status = hipOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(
 			&occupancyInBlocks,
 			func,
 			blockSizeToTry,
 			dynamicSMemSize,
 			flags);
 
-		if (status != cudaSuccess) {
+		if (status != hipSuccess) {
 			return status;
 		}
 
@@ -257,7 +258,7 @@ inline grid::composite_dimensions_t min_grid_params_for_max_occupancy(
 	// Note: only initializing the values her because of a
 	// spurious (?) compiler warning about potential uninitialized use.
 
-	unsigned flags = disable_caching_override ? cudaOccupancyDisableCachingOverride : cudaOccupancyDefault;
+	unsigned flags = disable_caching_override ? cudaOccupancyDisableCachingOverride : hipOccupancyDefault;
 	auto result = (cuda::status_t) cudaOccupancyMaxPotentialBlockSizeVariableSMemWithFlags_<UnaryFunction, const void*>(
 		&min_grid_size_in_blocks,
 		&block_size,
@@ -281,9 +282,9 @@ inline grid::dimension_t max_active_blocks_per_multiprocessor(
 {
 	// Assuming we don't need to set the current device here
 	int result;
-	cuda::status_t status = CUDA_SUCCESS;
-	auto flags = (unsigned) disable_caching_override ? cudaOccupancyDisableCachingOverride : cudaOccupancyDefault;
-	status = (cuda::status_t) cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(
+	cuda::status_t status = hipSuccess;
+	auto flags = hipOccupancyDefault;
+	status = (cuda::status_t) hipOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(
 		&result, kernel_function_ptr, (int) block_size_in_threads, (int) dynamic_shared_memory_per_block, flags);
 	throw_if_error(status,
 		"Determining the maximum occupancy in blocks per multiprocessor, given the block size and the amount of dynamic memory per block");
