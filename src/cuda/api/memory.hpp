@@ -592,16 +592,6 @@ inline status_t multidim_copy(::std::integral_constant<dimensionality_t, 2>, cop
 	return status;
 }
 
-inline status_t multidim_copy(::std::integral_constant<dimensionality_t, 3>, copy_parameters_t<3> params)
-{
-	if (params.srcContext == params.dstContext) {
-		context::current::detail_::scoped_ensurer_t ensure_context_for_this_scope{params.srcContext};
-		auto *intra_context_params = reinterpret_cast<base_copy_params<3>::intra_context_type *>(&params);
-		return cuMemcpy3D(intra_context_params);
-	}
-	return cuMemcpy3DPeer(&params);
-}
-
 template<dimensionality_t NumDimensions>
 status_t multidim_copy(copy_parameters_t<NumDimensions> params)
 {
@@ -821,20 +811,6 @@ inline status_t multidim_copy_in_current_context(
 	// Must be an intra-context copy, because CUDA does not support 2D inter-context copies and the copy parameters
 	// structure holds no information about contexts.
 	return cuMemcpy2DAsync(&params, stream_handle);
-}
-
-inline status_t multidim_copy_in_current_context(
-	::std::integral_constant<dimensionality_t, 3>,
-	copy_parameters_t<3> params,
-	stream::handle_t stream_handle)
-{
-	if (params.srcContext == params.dstContext) {
-		using intra_context_type = memory::detail_::base_copy_params<3>::intra_context_type;
-		auto* intra_context_params = reinterpret_cast<intra_context_type *>(&params);
-		return cuMemcpy3DAsync(intra_context_params, stream_handle);
-	}
-	return cuMemcpy3DPeerAsync(&params, stream_handle);
-
 }
 
 template<dimensionality_t NumDimensions>

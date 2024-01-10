@@ -338,35 +338,7 @@ inline array::dimensions_t<2> non_array_endpoint_dimensions<2>(endpoint_t endpoi
 		   dims_type{ params.WidthInBytes, params.Height };
 }
 
-template<>
-inline array::dimensions_t<3> non_array_endpoint_dimensions<3>(endpoint_t endpoint, const copy_parameters_t<3>& params)
-{
-	using dims_type = copy_parameters_t<3>::dimensions_type;
-	return (endpoint == endpoint_t::source) ?
-		   dims_type{ params.srcPitch, params.Height, params.Depth } :
-		   dims_type{ params.WidthInBytes, params.Height, params.Depth };
-}
-
 } //
-
-template<>
-template<typename T>
-copy_parameters_t<3>& copy_parameters_t<3>::set_endpoint(endpoint_t endpoint, const cuda::array_t<T, 3> &array) noexcept
-{
-	throw ::std::invalid_argument("unimplemented function");
-	return *this;
-}
-
-template<>
-inline copy_parameters_t<3>& copy_parameters_t<3>::set_endpoint_untyped(
-	endpoint_t              endpoint,
-	context::handle_t       context_handle,
-	void *                  ptr,
-	array::dimensions_t<3>  dimensions)
-{
-	throw ::std::invalid_argument("unimplemented function");
-	return *this;
-}
 
 // 2D copy parameters only have an intra-context variant; should we silently assume the context
 // is the same for both ends?
@@ -374,44 +346,8 @@ template<>
 inline copy_parameters_t<2>& copy_parameters_t<2>::set_context(endpoint_t endpoint, const context_t& context) noexcept = delete;
 
 template<>
-inline copy_parameters_t<3>& copy_parameters_t<3>::set_context(endpoint_t endpoint, const context_t& context) noexcept
-{
-	throw ::std::invalid_argument("unimplemented function");
-	return *this;
-}
-
-template<>
-template<typename T>
-inline copy_parameters_t<3>& copy_parameters_t<3>::set_endpoint(
-	endpoint_t endpoint,
-	context::handle_t context_handle,
-	T *ptr,
-	array::dimensions_t<3> dimensions) noexcept
-{
-	array::dimensions_t<3> untyped_dims = {dimensions.width * sizeof(T), dimensions.height, dimensions.depth};
-	return set_endpoint_untyped(endpoint, context_handle, ptr, untyped_dims);
-}
-
-template<>
-template<typename T>
-inline copy_parameters_t<3>& copy_parameters_t<3>::set_endpoint(
-	endpoint_t endpoint,
-	T *ptr,
-	array::dimensions_t<3> dimensions)
-{
-	return set_endpoint<T>(endpoint, context::current::detail_::get_handle(), ptr, dimensions);
-}
-
-template<>
 inline copy_parameters_t<2> &copy_parameters_t<2>::clear_rest() noexcept
 {
-	return *this;
-}
-
-template<>
-inline copy_parameters_t<3>& copy_parameters_t<3>::clear_rest() noexcept
-{
-	throw ::std::invalid_argument("unimplemented function");
 	return *this;
 }
 
@@ -433,29 +369,6 @@ inline copy_parameters_t<2>& copy_parameters_t<2>::set_bytes_extent(dimensions_t
 }
 
 template<>
-inline copy_parameters_t<3>& copy_parameters_t<3>::set_bytes_extent(dimensions_type extent) noexcept
-{
-	throw ::std::invalid_argument("unimplemented function");
-	return *this;
-}
-
-template<>
-template<typename T>
-copy_parameters_t<3>& copy_parameters_t<3>::set_extent(dimensions_type extent) noexcept
-{
-	dimensions_type extent_in_bytes{extent.width * sizeof(T), extent.height, extent.depth};
-	return set_bytes_extent(extent_in_bytes);
-}
-
-template<>
-inline copy_parameters_t<3>&
-copy_parameters_t<3>::set_bytes_offset(endpoint_t endpoint, dimensions_type offset) noexcept
-{
-	throw ::std::invalid_argument("unimplemented function");
-	return *this;
-}
-
-template<>
 inline copy_parameters_t<2> &
 copy_parameters_t<2>::set_bytes_offset(endpoint_t endpoint, dimensions_type offset) noexcept
 {
@@ -466,24 +379,10 @@ copy_parameters_t<2>::set_bytes_offset(endpoint_t endpoint, dimensions_type offs
 
 template<>
 template<typename T>
-copy_parameters_t<3>& copy_parameters_t<3>::set_offset(endpoint_t endpoint, dimensions_type offset) noexcept
-{
-	dimensions_type offset_in_bytes{offset.width * sizeof(T), offset.height, offset.depth};
-	return set_bytes_offset(endpoint, offset_in_bytes);
-}
-
-template<>
-template<typename T>
 copy_parameters_t<2> &copy_parameters_t<2>::set_offset(endpoint_t endpoint, dimensions_type offset) noexcept
 {
 	dimensions_type offset_in_bytes{offset.width * sizeof(T), offset.height};
 	return set_bytes_offset(endpoint, offset_in_bytes);
-}
-
-copy_parameters_t<3>::intra_context_type
-inline as_intra_context_parameters(const copy_parameters_t<3>& params)
-{
-	throw ::std::invalid_argument("unimplemented function");
 }
 
 } //namespace memory
