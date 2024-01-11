@@ -11,7 +11,7 @@
 
 #include "types.hpp"
 
-#include <cuda_runtime_api.h>
+#include <hip/hip_runtime_api.h>
 
 #include <chrono> // for duration types
 #include "constants.hpp"
@@ -37,7 +37,7 @@ inline void destroy(
 
 inline void enqueue_in_current_context(stream::handle_t stream_handle, handle_t event_handle)
 {
-	auto status = cuEventRecord(event_handle, stream_handle);
+	auto status = hipEventRecord(event_handle, stream_handle);
 	throw_if_error_lazy(status,
 		"Failed recording " + event::detail_::identify(event_handle)
 		+ " on " + stream::detail_::identify(stream_handle));
@@ -60,9 +60,9 @@ using flags_t = unsigned int;
 constexpr flags_t inline make_flags(bool uses_blocking_sync, bool records_timing, bool interprocess)
 {
 	return
-		  ( uses_blocking_sync  ? CU_EVENT_BLOCKING_SYNC : 0  )
-		| ( records_timing      ? 0 : CU_EVENT_DISABLE_TIMING )
-		| ( interprocess        ? CU_EVENT_INTERPROCESS : 0  );
+		  ( uses_blocking_sync  ? hipEventBlockingSync : 0  )
+		| ( records_timing      ? 0 : hipEventDisableTiming )
+		| ( interprocess        ? hipEventInterprocess : 0  );
 }
 
 } // namespace detail_
@@ -170,7 +170,7 @@ public: // other non-mutator methods
 	 */
 	bool has_occurred() const
 	{
-		auto status = cuEventQuery(handle_);
+		auto status = hipEventQuery(handle_);
 		if (status == cuda::status::success) return true;
 		if (status == cuda::status::async_operations_not_yet_completed) return false;
 		throw cuda::runtime_error(status,
@@ -266,7 +266,7 @@ public: // constructors and destructor
 	{
 		if (owning) {
 #ifdef NDEBUG
-			cuEventDestroy(handle_);
+			hipEventDestroy(handle_);
 				// Note: "Swallowing" any potential error to avoid ::std::terminate(); also,
 				// because the event cannot possibly exist after this call.
 #else
@@ -332,7 +332,7 @@ using duration_t = ::std::chrono::duration<float, ::std::milli>;
 inline duration_t time_elapsed_between(const event_t& start, const event_t& end)
 {
 	float elapsed_milliseconds;
-	auto status = cuEventElapsedTime(&elapsed_milliseconds, start.handle(), end.handle());
+	auto status = hipEventElapsedTime(&elapsed_milliseconds, start.handle(), end.handle());
 	throw_if_error_lazy(status, "determining the time elapsed between events");
 	return duration_t { elapsed_milliseconds };
 }
@@ -362,7 +362,7 @@ inline ::std::string identify(const event_t& event)
 inline handle_t create_raw_in_current_context(flags_t flags = 0u)
 {
 	cuda::event::handle_t new_event_handle;
-	auto status = cuEventCreate(&new_event_handle, flags);
+	auto status = hipEventCreateWithFlags(&new_event_handle, flags);
 	throw_if_error_lazy(status, "Failed creating a CUDA event");
 	return new_event_handle;
 }
@@ -391,7 +391,7 @@ inline void destroy_in_current_context(
 	device::id_t       current_device_id,
 	context::handle_t  current_context_handle)
 {
-	auto status = cuEventDestroy(handle);
+	auto status = hipEventDestroy(handle);
 	throw_if_error_lazy(status, "Failed destroying " +
 		identify(handle, current_context_handle, current_device_id));
 }
@@ -468,7 +468,7 @@ inline void wait(const event_t& event)
 	auto context_handle = event.context_handle();
 	auto event_handle = event.handle();
 	context::current::detail_::scoped_override_t context_for_this_scope(context_handle);
-	auto status = cuEventSynchronize(event_handle);
+	auto status = hipEventSynchronize(event_handle);
 	throw_if_error_lazy(status, "Failed synchronizing " + event::detail_::identify(event));
 }
 
