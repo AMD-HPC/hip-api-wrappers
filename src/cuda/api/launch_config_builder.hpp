@@ -108,7 +108,7 @@ protected:
 			auto dshmem_size = get_dynamic_shared_memory_size(dimensions_.block.value());
 			auto num_block_threads = static_cast<grid::block_dimension_t>(dimensions_.block.value().volume());
 			auto blocks_per_multiprocessor = kernel_->max_active_blocks_per_multiprocessor(num_block_threads, dshmem_size);
-			auto num_multiprocessors = device().get_attribute(CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT);
+			auto num_multiprocessors = device().get_attribute(hipDeviceAttributeMultiprocessorCount);
 			result.grid = blocks_per_multiprocessor * num_multiprocessors;
 			return result;
 		}
