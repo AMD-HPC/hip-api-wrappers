@@ -18,8 +18,8 @@
 #include "miscellany.hpp"
 #include "types.hpp"
 
-#include <cuda_runtime_api.h>
-#include <cuda.h>
+#include <hip/hip_runtime_api.h>
+#include <hip/hip_runtime.h>
 
 #include <string>
 #include <memory>
@@ -52,18 +52,18 @@ enum : bool {
 };
 
 enum wait_condition_t : unsigned {
-	greater_or_equal_to            = CU_STREAM_WAIT_VALUE_GEQ,
-	geq                            = CU_STREAM_WAIT_VALUE_GEQ,
+	greater_or_equal_to            = hipStreamWaitValueGte,
+	geq                            = hipStreamWaitValueGte,
 
-	equality                       = CU_STREAM_WAIT_VALUE_EQ,
-	equals                         = CU_STREAM_WAIT_VALUE_EQ,
+	equality                       = hipStreamWaitValueEq,
+	equals                         = hipStreamWaitValueEq,
 
-	nonzero_after_applying_bitmask = CU_STREAM_WAIT_VALUE_AND,
-	one_bits_overlap               = CU_STREAM_WAIT_VALUE_AND,
-	bitwise_and                    = CU_STREAM_WAIT_VALUE_AND,
+	nonzero_after_applying_bitmask = hipStreamWaitValueAnd,
+	one_bits_overlap               = hipStreamWaitValueAnd,
+	bitwise_and                    = hipStreamWaitValueAnd,
 
-	zero_bits_overlap              = CU_STREAM_WAIT_VALUE_NOR,
-	bitwise_nor                    = CU_STREAM_WAIT_VALUE_NOR,
+	zero_bits_overlap              = hipStreamWaitValueNor,
+	bitwise_nor                    = hipStreamWaitValueNor,
 } ;
 
 
@@ -119,9 +119,9 @@ inline handle_t create_raw_in_current_context(
 )
 {
 	const unsigned int flags = (synchronizes_with_default_stream == sync) ?
-		CU_STREAM_DEFAULT : CU_STREAM_NON_BLOCKING;
+		hipStreamDefault : hipStreamNonBlocking;
 	handle_t new_stream_handle;
-	auto status = cuStreamCreateWithPriority(&new_stream_handle, flags, priority);
+	auto status = hipStreamCreateWithPriority(&new_stream_handle, flags, priority);
 	throw_if_error_lazy(status, "Failed creating a new stream in " + detail_::identify(new_stream_handle));
 	return new_stream_handle;
 }
@@ -189,12 +189,12 @@ namespace detail_ {
 // Providing the same signature to multiple CUDA driver calls, to allow
 // uniform templated use of all of them
 template<typename T>
-CUresult wait_on_value(CUstream stream_handle, CUdeviceptr address, T value, unsigned int flags);
+hipError_t wait_on_value(hipStream_t stream_handle, hipDeviceptr_t address, T value, unsigned int flags);
 
 // Providing the same signature to multiple CUDA driver calls, to allow
 // uniform templated use of all of them
 template<typename T>
-CUresult write_value(CUstream stream_handle, CUdeviceptr address, T value, unsigned int flags);
+hipError_t write_value(hipStream_t stream_handle, hipDeviceptr_t address, T value, unsigned int flags);
 
 } // namespace detail_
 
@@ -248,20 +248,20 @@ public: // other non-mutators
 	bool synchronizes_with_default_stream() const
 	{
 		unsigned int flags;
-		auto status = cuStreamGetFlags(handle_, &flags);
+		auto status = hipStreamGetFlags(handle_, &flags);
 			// Could have used the equivalent Driver API call,
-			// cuStreamGetFlags(handle_, &flags);
+			// hipStreamGetFlags(handle_, &flags);
 		throw_if_error_lazy(status, "Failed obtaining flags for a stream in "
 				+ context::detail_::identify(context_handle_, device_id_));
-		return flags & CU_STREAM_NON_BLOCKING;
+		return flags & hipStreamNonBlocking;
 	}
 
 	stream::priority_t priority() const
 	{
 		int the_priority;
-		auto status = cuStreamGetPriority(handle_, &the_priority);
+		auto status = hipStreamGetPriority(handle_, &the_priority);
 			// Could have used the equivalent Runtime API call:
-			// cuStreamGetPriority(handle_, &the_priority);
+			// hipStreamGetPriority(handle_, &the_priority);
 		throw_if_error_lazy(status, "Failed obtaining priority for a stream in "
 			+ context::detail_::identify(context_handle_, device_id_));
 		return the_priority;
@@ -280,13 +280,13 @@ public: // other non-mutators
 	bool has_work_remaining() const
 	{
 		CAW_SET_SCOPE_CONTEXT(context_handle_);
-		auto status = cuStreamQuery(handle_);
+		auto status = hipStreamQuery(handle_);
 			// Could have used the equivalent runtime API call:
-			// cuStreamQuery(handle_);
+			// hipStreamQuery(handle_);
 		switch(status) {
-		case CUDA_SUCCESS:
+		case hipSuccess:
 			return false;
-		case CUDA_ERROR_NOT_READY:
+		case hipErrorNotReady:
 			return true;
 		default:
 			throw cuda::runtime_error(static_cast<cuda::status::named_t>(status),
@@ -506,7 +506,7 @@ public: // mutators
 
 	private:
 		template <typename Invokable>
-		static void CUDA_CB stream_launched_invoker(void* type_erased_invokable) {
+		static void stream_launched_invoker(void* type_erased_invokable) {
 			auto invokable = reinterpret_cast<Invokable*>(type_erased_invokable);
 			(*invokable)();
 		}
@@ -583,9 +583,9 @@ public: // mutators
 			// attached to this stream
 			constexpr const size_t length = 0;
 			auto flags = static_cast<unsigned>(attachment);
-			auto status =  cuStreamAttachMemAsync(
+			auto status =  hipStreamAttachMemAsync(
 				associated_stream.handle_,  memory::device::address(managed_region_start), length, flags);
-				// Could have used the equivalent Driver API call cuStreamAttachMemAsync
+				// Could have used the equivalent Driver API call hipStreamAttachMemAsync
 			throw_if_error_lazy(status, "Failed scheduling an attachment of a managed memory region on "
 				+ stream::detail_::identify(associated_stream.handle_, associated_stream.context_handle_,
 				associated_stream.device_id_));
@@ -636,9 +636,7 @@ public: // mutators
 				::std::is_same<T,uint32_t>::value or ::std::is_same<T,uint64_t>::value,
 				"Unsupported type for stream value wait."
 			);
-			unsigned flags = with_memory_barrier ?
-				CU_STREAM_WRITE_VALUE_DEFAULT :
-				CU_STREAM_WRITE_VALUE_NO_MEMORY_BARRIER;
+			unsigned flags = 0x0;
 			auto result = static_cast<status_t>(
 				stream::detail_::write_value(associated_stream.handle_, memory::device::address(ptr), value, flags));
 			throw_if_error_lazy(result, "Failed scheduling a write to global memory on "
@@ -667,8 +665,7 @@ public: // mutators
 				::std::is_same<T,int32_t>::value or ::std::is_same<T,int64_t>::value,
 				"Unsupported type for stream value wait."
 			);
-			unsigned flags = static_cast<unsigned>(condition) |
-				(with_memory_barrier ? CU_STREAM_WAIT_VALUE_FLUSH : 0);
+			unsigned flags = static_cast<unsigned>(condition) | 0;
 			auto result = static_cast<status_t>(
 				stream::detail_::wait_on_value(associated_stream.handle_, address, value, flags));
 			throw_if_error_lazy(result,
@@ -688,13 +685,9 @@ public: // mutators
 		 */
 		void flush_remote_writes() const
 		{
-			CUstreamBatchMemOpParams op_params;
-			op_params.flushRemoteWrites.operation = CU_STREAM_MEM_OP_FLUSH_REMOTE_WRITES;
-			op_params.flushRemoteWrites.flags = 0;
-			static const unsigned count = 1;
-			static const unsigned flags = 0;
-			// Let's cross our fingers and assume nothing else needs to be set here...
-			auto status = cuStreamBatchMemOp(associated_stream.handle_, count, &op_params, flags);
+			// We don't support cuStreamBatchMemOp so let's just synchronize the stream and take the
+			// performance penalty
+			auto status = hipStreamSynchronize(associated_stream.handle_);
 			throw_if_error_lazy(status, "scheduling a flush-remote-writes memory operation as a 1-op batch");
 		}
 
@@ -728,22 +721,7 @@ public: // mutators
 		template <typename Iterator>
 		void single_value_operations_batch(Iterator ops_begin, Iterator ops_end) const
 		{
-			static_assert(
-				::std::is_same<typename ::std::iterator_traits<Iterator>::value_type, CUstreamBatchMemOpParams>::value,
-				"Only accepting iterator pairs for the CUDA-driver-API memory operation descriptor,"
-				" CUstreamBatchMemOpParams, as the value type");
-			auto num_ops = ::std::distance(ops_begin, ops_end);
-			if (::std::is_same<typename ::std::remove_const<decltype(ops_begin)>::type, CUstreamBatchMemOpParams* >::value,
-				"Only accepting containers of the CUDA-driver-API memory operation descriptor, CUstreamBatchMemOpParams")
-			{
-				auto ops_ptr = reinterpret_cast<const CUstreamBatchMemOpParams*>(ops_begin);
-				cuStreamBatchMemOp(associated_stream.handle_, num_ops, ops_ptr);
-			}
-			else {
-				auto ops_uptr = ::std::unique_ptr<CUstreamBatchMemOpParams[]>(new CUstreamBatchMemOpParams[num_ops]);
-				::std::copy(ops_begin, ops_end, ops_uptr.get());
-				cuStreamBatchMemOp(associated_stream.handle_, num_ops, ops_uptr.get());
-			}
+			throw ::std::runtime_error("not implemented");
 		}
 
 		/**
@@ -823,7 +801,7 @@ public: // constructors and destructor
 	{
 		if (owning) {
 			CAW_SET_SCOPE_CONTEXT(context_handle_);
-			cuStreamDestroy(handle_);
+			hipStreamDestroy(handle_);
 		}
 		// TODO: DRY
 		if (holds_pc_refcount_unit) {
@@ -924,28 +902,28 @@ inline stream_t create(
 }
 
 template<>
-inline CUresult wait_on_value<uint32_t>(CUstream stream_handle, CUdeviceptr address, uint32_t value, unsigned int flags)
+inline hipError_t wait_on_value<uint32_t>(hipStream_t stream_handle, hipDeviceptr_t address, uint32_t value, unsigned int flags)
 {
-	return cuStreamWaitValue32(stream_handle, address, value, flags);
+	return hipStreamWaitValue32(stream_handle, address, value, flags);
 }
 
 template<>
-inline CUresult wait_on_value<uint64_t>(CUstream stream_handle, CUdeviceptr address, uint64_t value, unsigned int flags)
+inline hipError_t wait_on_value<uint64_t>(hipStream_t stream_handle, hipDeviceptr_t address, uint64_t value, unsigned int flags)
 {
-	return cuStreamWaitValue64(stream_handle, address, value, flags);
+	return hipStreamWaitValue64(stream_handle, address, value, flags);
 }
 
 
 template<>
-inline CUresult write_value<uint32_t>(CUstream stream_handle, CUdeviceptr address, uint32_t value, unsigned int flags)
+inline hipError_t write_value<uint32_t>(hipStream_t stream_handle, hipDeviceptr_t address, uint32_t value, unsigned int flags)
 {
-	return cuStreamWriteValue32(stream_handle, address, value, flags);
+	return hipStreamWriteValue32(stream_handle, address, value, flags);
 }
 
 template<>
-inline CUresult write_value<uint64_t>(CUstream stream_handle, CUdeviceptr address, uint64_t value, unsigned int flags)
+inline hipError_t write_value<uint64_t>(hipStream_t stream_handle, hipDeviceptr_t address, uint64_t value, unsigned int flags)
 {
-	return cuStreamWriteValue64(stream_handle, address, value, flags);
+	return hipStreamWriteValue64(stream_handle, address, value, flags);
 }
 
 /**
@@ -970,14 +948,14 @@ void enqueue_function_call(const stream_t& stream, Function function, void* argu
 	// callback - what it will actually _do_ is invoke the callback we were passed.
 
 #if CUDA_VERSION >= 10000
-	auto status = cuLaunchHostFunc(stream.handle(), function, argument);
-	// Could have used the equivalent Driver API call: cuLaunchHostFunc()
+	auto status = hipLaunchHostFunc(stream.handle(), function, argument);
+	// Could have used the equivalent Driver API call: hipLaunchHostFunc()
 #else
 	// The nVIDIA runtime API (at least up to v10.2) requires passing 0 as the flags
 	// variable, see:
 	// http://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__STREAM.html
 	static constexpr const unsigned fixed_flags { 0u };
-	auto status = cuStreamAddCallback(stream.handle(), function, argument, fixed_flags);
+	auto status = hipStreamAddCallback(stream.handle(), function, argument, fixed_flags);
 #endif
 	throw_if_error_lazy(status,	"Failed enqueuing a host function/invokable to be launched on " + stream::detail_::identify(stream));
 }
@@ -1030,7 +1008,7 @@ inline void synchronize(const stream_t& stream)
 	// and not have trouble acting on a stream in another context - it balks at doing so under
 	// certain conditions, so we must place ourselves in the stream's context.
 	CAW_SET_SCOPE_CONTEXT(stream.context_handle());
-	auto status = cuStreamSynchronize(stream.handle());
+	auto status = hipStreamSynchronize(stream.handle());
 	throw_if_error_lazy(status, "Failed synchronizing " + stream::detail_::identify(stream));
 }
 
