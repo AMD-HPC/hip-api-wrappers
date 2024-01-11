@@ -16,24 +16,23 @@ namespace cuda {
 namespace memory {
 namespace external {
 
-enum kind_t : ::std::underlying_type<CUexternalMemoryHandleType_enum>::type {
-	opaque_file_descriptor = CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD,
-	opaque_shared_windows_handle = CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32,
-	opaque_globally_shared_windows_handle = CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_KMT,
-	direct3d_12_heap = CU_EXTERNAL_MEMORY_HANDLE_TYPE_D3D12_HEAP,
-	direct3d_12_committed_resource = CU_EXTERNAL_MEMORY_HANDLE_TYPE_D3D12_RESOURCE,
-	direct3d_resource_shared_windows_handle = CU_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_RESOURCE,
-	direct3d_resource_globally_shared_handle = CU_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_RESOURCE_KMT,
-	nvscibuf_object = CU_EXTERNAL_MEMORY_HANDLE_TYPE_NVSCIBUF
+enum kind_t : ::std::underlying_type<hipExternalMemoryHandleType_enum>::type {
+	opaque_file_descriptor = hipExternalMemoryHandleTypeOpaqueFd,
+	opaque_shared_windows_handle = hipExternalMemoryHandleTypeOpaqueWin32,
+	opaque_globally_shared_windows_handle = hipExternalMemoryHandleTypeOpaqueWin32Kmt,
+	direct3d_12_heap = hipExternalMemoryHandleTypeD3D12Heap,
+	direct3d_12_committed_resource = hipExternalMemoryHandleTypeD3D12Resource,
+	direct3d_resource_shared_windows_handle = hipExternalMemoryHandleTypeD3D11Resource,
+	direct3d_resource_globally_shared_handle = hipExternalMemoryHandleTypeD3D11ResourceKmt
 };
 
-using descriptor_t = CUDA_EXTERNAL_MEMORY_HANDLE_DESC;
+using descriptor_t = hipExternalMemoryHandleDesc;
 
 namespace detail_ {
 
 inline void destroy(handle_t handle, const descriptor_t &)
 {
-	auto status = cuDestroyExternalMemory(handle);
+	auto status = hipDestroyExternalMemory(handle);
 	throw_if_error_lazy(status, ::std::string("Destroying a memory resource"));
 }
 
@@ -62,7 +61,7 @@ inline ::std::string identify(handle_t handle, descriptor_t descriptor)
 inline handle_t import(const descriptor_t& descriptor)
 {
 	handle_t handle;
-	auto status = cuImportExternalMemory(&handle, &descriptor);
+	auto status = hipImportExternalMemory(&handle, &descriptor);
 	throw_if_error_lazy(status, "Failed importing " + identify(descriptor));
 	return handle;
 }
@@ -106,7 +105,7 @@ public:
 	{
 		if (owning_) {
 #ifdef NDEBUG
-			cuDestroyExternalMemory(handle_);
+			hipDestroyExternalMemory(handle_);
 				// Note: "Swallowing" any potential error to avoid ::std::terminate()
 #else
 			detail_::destroy(handle_, descriptor_);
@@ -139,11 +138,11 @@ namespace detail_ {
 inline region_t map(handle_t handle, subregion_spec_t subregion)
 {
 	device::address_t address;
-	CUDA_EXTERNAL_MEMORY_BUFFER_DESC_st buffer_desc;
+	hipExternalMemoryBufferDesc_st buffer_desc;
 	buffer_desc.flags = 0u;
 	buffer_desc.offset = subregion.offset;
 	buffer_desc.size = subregion.size;
-	auto result = cuExternalMemoryGetMappedBuffer(&address, handle, &buffer_desc);
+	auto result = hipExternalMemoryGetMappedBuffer(&address, handle, &buffer_desc);
 	throw_if_error_lazy(result, "Failed mapping " + detail_::identify(subregion)
 								+ " within " + detail_::identify(handle) + " to a device buffer");
 	return region_t{as_pointer(address), subregion.size};
