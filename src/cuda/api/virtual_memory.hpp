@@ -4,7 +4,7 @@
 #ifndef CUDA_API_WRAPPERS_VIRTUAL_MEMORY_HPP_
 #define CUDA_API_WRAPPERS_VIRTUAL_MEMORY_HPP_
 
-#include <cuda.h>
+#include <hip/hip_runtime.h>
 
 #if CUDA_VERSION >= 10020
 
@@ -20,7 +20,7 @@ class physical_allocation_t;
 
 namespace physical_allocation {
 
-using handle_t = CUmemGenericAllocationHandle;
+using handle_t = hipMemGenericAllocationHandle_t;
 
 namespace detail_ {
 
@@ -29,14 +29,14 @@ physical_allocation_t wrap(handle_t handle, size_t size, bool holds_refcount_uni
 } // namespace detail_
 
 namespace detail_ {
-enum class granularity_kind_t : ::std::underlying_type<CUmemAllocationGranularity_flags_enum>::type {
-	minimum_required = CU_MEM_ALLOC_GRANULARITY_MINIMUM,
-	recommended_for_performance = CU_MEM_ALLOC_GRANULARITY_RECOMMENDED
+enum class granularity_kind_t : ::std::underlying_type<hipMemAllocationGranularity_flags>::type {
+	minimum_required = hipMemAllocationGranularityMinimum,
+	recommended_for_performance = hipMemAllocationGranularityRecommended
 };
 
 } // namespace detail_
 
-// Note: Not inheriting from CUmemAllocationProp_st, since
+// Note: Not inheriting from hipMemAllocationProp, since
 // that structure is a bit messed up
 struct properties_t {
 	// Note: Specifying a compression type is currently unsupported,
@@ -55,8 +55,8 @@ public: // getters
 protected: // non-mutators
 	size_t granularity(detail_::granularity_kind_t kind) const {
 		size_t result;
-		auto status = cuMemGetAllocationGranularity(&result, &raw,
-			static_cast<CUmemAllocationGranularity_flags>(kind));
+		auto status = hipMemGetAllocationGranularity(&result, &raw,
+			static_cast<hipMemAllocationGranularity_flags>(kind));
 		throw_if_error_lazy(status, "Could not determine physical allocation granularity");
 		return result;
 	}
@@ -66,9 +66,9 @@ public: // non-mutators
 	size_t recommended_granularity() const { return granularity(detail_::granularity_kind_t::recommended_for_performance); }
 
 public:
-	properties_t(CUmemAllocationProp_st raw_properties) : raw(raw_properties)
+	properties_t(hipMemAllocationProp raw_properties) : raw(raw_properties)
 	{
-		if (raw.location.type != CU_MEM_LOCATION_TYPE_DEVICE) {
+		if (raw.location.type != hipMemLocationTypeDevice) {
 			throw ::std::runtime_error("Unexpected physical_allocation type - we only know about devices!");
 		}
 	}
@@ -77,7 +77,7 @@ public:
 	properties_t(const properties_t&) = default;
 
 public:
-	CUmemAllocationProp_st raw;
+	hipMemAllocationProp raw;
 
 };
 
@@ -86,11 +86,11 @@ namespace detail_ {
 template<physical_allocation::shared_handle_kind_t SharedHandleKind>
 properties_t create_properties(cuda::device::id_t device_id)
 {
-	CUmemAllocationProp_st raw_props{};
-	raw_props.type = CU_MEM_ALLOCATION_TYPE_PINNED;
-	raw_props.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+	hipMemAllocationProp raw_props{};
+	raw_props.type = hipMemAllocationTypePinned;
+	raw_props.location.type = hipMemLocationTypeDevice;
 	raw_props.location.id = static_cast<int>(device_id);
-	raw_props.requestedHandleTypes = static_cast<CUmemAllocationHandleType>(SharedHandleKind);
+	raw_props.requestedHandleTypes = static_cast<hipMemAllocationHandleType>(SharedHandleKind);
 	raw_props.win32HandleMetaData = nullptr;
 	return properties_t{raw_props};
 }
@@ -111,7 +111,7 @@ namespace detail_ {
 
 inline void cancel_reservation(memory::region_t reserved)
 {
-	auto status = cuMemAddressFree(memory::device::address(reserved.start()), reserved.size());
+	auto status = hipMemAddressFree(memory::device::address(reserved.start()), reserved.size());
 	throw_if_error_lazy(status, "Failed freeing a reservation of " + memory::detail_::identify(reserved));
 }
 
@@ -175,8 +175,8 @@ inline reserved_address_range_t wrap(region_t address_range, alignment_t alignme
 inline reserved_address_range_t reserve(region_t requested_region, alignment_t alignment = alignment::default_)
 {
 	unsigned long flags { 0 };
-	CUdeviceptr ptr;
-	auto status = cuMemAddressReserve(&ptr, requested_region.size(), alignment, requested_region.device_address(), flags);
+	hipDeviceptr_t ptr;
+	auto status = hipMemAddressReserve(&ptr, requested_region.size(), alignment, requested_region.device_address(), flags);
 	throw_if_error_lazy(status, "Failed making a reservation of " + cuda::memory::detail_::identify(requested_region)
 		+ " with alignment value " + ::std::to_string(alignment));
 	bool is_owning { true };
@@ -207,7 +207,7 @@ public: // constructors & destructor
 	~physical_allocation_t() noexcept(false)
 	{
 		if (not holds_refcount_unit_) { return; }
-		auto result = cuMemRelease(handle_);
+		auto result = hipMemRelease(handle_);
 		throw_if_error_lazy(result, "Failed making a virtual memory physical_allocation of size " + ::std::to_string(size_));
 	}
 
@@ -219,8 +219,8 @@ public: // non-mutators
 	bool holds_refcount_unit() const noexcept { return holds_refcount_unit_; }
 
 	physical_allocation::properties_t properties() const {
-		CUmemAllocationProp raw_properties;
-		auto status = cuMemGetAllocationPropertiesFromHandle(&raw_properties, handle_);
+		hipMemAllocationProp raw_properties;
+		auto status = hipMemGetAllocationPropertiesFromHandle(&raw_properties, handle_);
 		throw_if_error_lazy(status, "Obtaining the properties of a virtual memory physical_allocation with handle " + ::std::to_string(handle_));
 		return { raw_properties };
 	}
@@ -230,7 +230,7 @@ public: // non-mutators
 	{
 		physical_allocation::shared_handle_t<SharedHandleKind> shared_handle_;
 		static constexpr const unsigned long long flags { 0 };
-		auto result = cuMemExportToShareableHandle(&shared_handle_, handle_, static_cast<CUmemAllocationHandleType>(SharedHandleKind), flags);
+		auto result = hipMemExportToShareableHandle(&shared_handle_, handle_, static_cast<hipMemAllocationHandleType>(SharedHandleKind), flags);
 		throw_if_error_lazy(result, "Exporting a (generic CUDA) shared memory physical_allocation to a shared handle");
 		return shared_handle_;
 	}
@@ -246,8 +246,8 @@ namespace physical_allocation {
 inline physical_allocation_t create(size_t size, properties_t properties)
 {
 	static constexpr const unsigned long long flags { 0 };
-	CUmemGenericAllocationHandle handle;
-	auto result = cuMemCreate(&handle, size, &properties.raw, flags);
+	hipMemGenericAllocationHandle_t handle;
+	auto result = hipMemCreate(&handle, size, &properties.raw, flags);
 	throw_if_error_lazy(result, "Failed making a virtual memory physical_allocation of size " + ::std::to_string(size));
 	static constexpr const bool is_owning { true };
 	return detail_::wrap(handle, size, is_owning);
@@ -269,8 +269,8 @@ inline physical_allocation_t wrap(handle_t handle, size_t size, bool holds_refco
 
 inline properties_t properties_of(handle_t handle)
 {
-	CUmemAllocationProp prop;
-	auto result = cuMemGetAllocationPropertiesFromHandle (&prop, handle);
+	hipMemAllocationProp prop;
+	auto result = hipMemGetAllocationPropertiesFromHandle (&prop, handle);
 	throw_if_error_lazy(result, "Failed obtaining the properties of the virtual memory physical_allocation with handle "
 	  + ::std::to_string(handle));
 	return { prop };
@@ -293,8 +293,8 @@ template <physical_allocation::shared_handle_kind_t SharedHandleKind>
 physical_allocation_t import(shared_handle_t<SharedHandleKind> shared_handle, size_t size, bool holds_refcount_unit = false)
 {
 	handle_t result_handle;
-	auto result = cuMemImportFromShareableHandle(
-		&result_handle, reinterpret_cast<void*>(shared_handle), CUmemAllocationHandleType(SharedHandleKind));
+	auto result = hipMemImportFromShareableHandle(
+		&result_handle, reinterpret_cast<void*>(shared_handle), hipMemAllocationHandleType(SharedHandleKind));
 	throw_if_error_lazy(result, "Failed importing a virtual memory physical_allocation from a shared handle ");
 	return physical_allocation::detail_::wrap(result_handle, size, holds_refcount_unit);
 }
@@ -310,10 +310,10 @@ inline ::std::string identify(physical_allocation_t physical_allocation) {
 } // namespace physical_allocation
 
 /*
-enum access_mode_t : ::std::underlying_type<CUmemAccess_flags>::type {
-	no_access             = CU_MEM_ACCESS_FLAGS_PROT_NONE,
-	read_access           = CU_MEM_ACCESS_FLAGS_PROT_READ,
-	read_and_write_access = CU_MEM_ACCESS_FLAGS_PROT_READWRITE,
+enum access_mode_t : ::std::underlying_type<hipMemAccessFlags>::type {
+	no_access             = hipMemAccessFlagsProtNone,
+	read_access           = hipMemAccessFlagsProtRead,
+	read_and_write_access = hipMemAccessFlagsProtReadWrite,
 	rw_access             = read_and_write_access
 };
 */
@@ -335,14 +335,14 @@ namespace detail_ {
 
 inline access_permissions_t get_access_mode(region_t fully_mapped_region, cuda::device::id_t device_id)
 {
-	CUmemLocation_st location { CU_MEM_LOCATION_TYPE_DEVICE, device_id };
+	hipMemLocation location { hipMemLocationTypeDevice, device_id };
 	unsigned long long flags;
-	auto result = cuMemGetAccess(&flags, &location, fully_mapped_region.device_address() );
+	auto result = hipMemGetAccess(&flags, &location, fully_mapped_region.device_address() );
 	throw_if_error_lazy(result, "Failed determining the access mode for "
 		+ cuda::device::detail_::identify(device_id)
 		+ " to the virtual memory mapping to the range of size "
 		+ ::std::to_string(fully_mapped_region.size()) + " bytes at " + cuda::detail_::ptr_as_hex(fully_mapped_region.data()));
-	return access_permissions_t::from_access_flags(static_cast<CUmemAccess_flags>(flags)); // Does this actually work?
+	return access_permissions_t::from_access_flags(static_cast<hipMemAccessFlags>(flags)); // Does this actually work?
 }
 
 } // namespace detail_
@@ -451,7 +451,7 @@ public: // constructors & destructors
 	~mapping_t() noexcept(false)
 	{
 		if (not owning_) { return; }
-		auto result = cuMemUnmap(address_range_.device_address(), address_range_.size());
+		auto result = hipMemUnmap(address_range_.device_address(), address_range_.size());
 		throw_if_error_lazy(result, "Failed unmapping " + mapping::detail_::identify(address_range_));
 	}
 
@@ -460,8 +460,8 @@ public:
 
 	physical_allocation_t allocation() const
 	{
-		CUmemGenericAllocationHandle allocation_handle;
-		auto status = cuMemRetainAllocationHandle(&allocation_handle, address_range_.data());
+		hipMemGenericAllocationHandle_t allocation_handle;
+		auto status = hipMemRetainAllocationHandle(&allocation_handle, address_range_.data());
 		throw_if_error_lazy(status, " Failed obtaining/retaining the physical_allocation handle for the virtual memory "
 			"range mapped to " + cuda::detail_::ptr_as_hex(address_range_.data()) + " of size " +
 				::std::to_string(address_range_.size()) + " bytes");
@@ -499,7 +499,7 @@ inline mapping_t map(region_t region, physical_allocation_t physical_allocation)
 	size_t offset_into_allocation { 0 }; // not yet supported, but in the API
 	constexpr const unsigned long long flags { 0 };
 	auto handle = physical_allocation.handle();
-	auto status = cuMemMap(region.device_address(), region.size(), offset_into_allocation, handle, flags);
+	auto status = hipMemMap(region.device_address(), region.size(), offset_into_allocation, handle, flags);
 	throw_if_error_lazy(status, "Failed making a virtual memory mapping of "
 		+ physical_allocation::detail_::identify(physical_allocation)
 		+ " to the range of size " + ::std::to_string(region.size()) + " bytes at " +
