@@ -18,11 +18,11 @@ namespace peer_to_peer {
 
 // Aliases for all CUDA device attributes
 
-constexpr const attribute_t link_performance_rank = CU_DEVICE_P2P_ATTRIBUTE_PERFORMANCE_RANK; /// A relative value indicating the performance of the link between two devices
-constexpr const attribute_t	access_support = CU_DEVICE_P2P_ATTRIBUTE_ACCESS_SUPPORTED; /// 1 if access is supported, 0 otherwise
-constexpr const attribute_t	native_atomics_support = CU_DEVICE_P2P_ATTRIBUTE_NATIVE_ATOMIC_SUPPORTED; /// 1 if the first device can perform native atomic operations on the second device, 0 otherwise
+constexpr const attribute_t link_performance_rank = hipDevP2PAttrPerformanceRank; /// A relative value indicating the performance of the link between two devices
+constexpr const attribute_t	access_support = hipDevP2PAttrAccessSupported; /// 1 if access is supported, 0 otherwise
+constexpr const attribute_t	native_atomics_support = hipDevP2PAttrNativeAtomicSupported; /// 1 if the first device can perform native atomic operations on the second device, 0 otherwise
 #if CUDA_VERSION >= 10000
-constexpr const attribute_t	array_access_support = CU_DEVICE_P2P_ATTRIBUTE_CUDA_ARRAY_ACCESS_SUPPORTED; /// 1 if special array iterpolatory access operations are supported across the link, 0 otherwise
+constexpr const attribute_t	array_access_support = hipDevP2PAttrHipArrayAccessSupported; /// 1 if special array iterpolatory access operations are supported across the link, 0 otherwise
 #endif
 
 
@@ -41,7 +41,7 @@ namespace detail_ {
 inline attribute_value_t get_attribute(attribute_t attribute, id_t source, id_t destination)
 {
 	attribute_value_t value;
-	auto status = cuDeviceGetP2PAttribute(&value, attribute, source, destination);
+	auto status = hipDeviceGetP2PAttribute(&value, attribute, source, destination);
 	throw_if_error_lazy(status, "Failed obtaining peer-to-peer device attribute for device pair ("
 		+ ::std::to_string(source) + ", " + ::std::to_string(destination) + ')');
 	return value;
@@ -58,7 +58,7 @@ inline attribute_value_t get_attribute(attribute_t attribute, id_t source, id_t 
 inline bool can_access(const device::id_t accessor, const device::id_t peer)
 {
 	int result;
-	auto status = cuDeviceCanAccessPeer(&result, accessor, peer);
+	auto status = hipDeviceCanAccessPeer(&result, accessor, peer);
 	throw_if_error_lazy(status, "Failed determining whether " + device::detail_::identify(accessor)
 		+ " can access " + device::detail_::identify(peer));
 	return (result == 1);
@@ -92,13 +92,13 @@ inline void enable_access_to(context::handle_t peer_context)
 {
 	enum : unsigned {fixed_flags = 0 };
 	// No flags are supported as of CUDA 8.0
-	auto status = cuCtxEnablePeerAccess(peer_context, fixed_flags);
+	auto status = hipCtxEnablePeerAccess(peer_context, fixed_flags);
 	throw_if_error_lazy(status, "Failed enabling access to peer " + context::detail_::identify(peer_context));
 }
 
 inline void disable_access_to(context::handle_t peer_context)
 {
-	auto status = cuCtxDisablePeerAccess(peer_context);
+	auto status = hipCtxDisablePeerAccess(peer_context);
 	throw_if_error_lazy(status, "Failed disabling access to peer " + context::detail_::identify(peer_context));
 }
 
