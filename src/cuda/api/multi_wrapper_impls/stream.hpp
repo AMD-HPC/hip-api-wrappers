@@ -46,7 +46,7 @@ inline void record_event_in_current_context(
 	stream::handle_t   stream_handle,
 	event::handle_t    event_handle)
 {
-	auto status = cuEventRecord(event_handle, stream_handle);
+	auto status = hipEventRecord(event_handle, stream_handle);
 	throw_if_error_lazy(status,
 		"Failed scheduling " + event::detail_::identify(event_handle)
 		+ " on " + stream::detail_::identify(stream_handle, current_context_handle_, current_device_id));
@@ -84,7 +84,7 @@ inline void stream_t::enqueue_t::wait(const event_t& event_) const
 	// Required by the CUDA runtime API; the flags value is currently unused
 	static constexpr const unsigned int flags = 0;
 
-	auto status = cuStreamWaitEvent(associated_stream.handle_, event_.handle(), flags);
+	auto status = hipStreamWaitEvent(associated_stream.handle_, event_.handle(), flags);
 	throw_if_error_lazy(status,
 		"Failed scheduling a wait for " + event::detail_::identify(event_.handle())
 		+ " on " + stream::detail_::identify(associated_stream));

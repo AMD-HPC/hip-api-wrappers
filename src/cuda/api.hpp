@@ -59,7 +59,7 @@
 // #include "api/multi_wrapper_impls/event.hpp"
 #include "api/multi_wrapper_impls/device.hpp"
 #include "api/multi_wrapper_impls/context.hpp"
-// #include "api/multi_wrapper_impls/stream.hpp"
+#include "api/multi_wrapper_impls/stream.hpp"
 #include "api/multi_wrapper_impls/memory.hpp"
 #include "api/multi_wrapper_impls/kernel.hpp"
 #include "api/multi_wrapper_impls/kernel_launch.hpp"
