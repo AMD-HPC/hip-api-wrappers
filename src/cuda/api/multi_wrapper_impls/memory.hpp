@@ -292,20 +292,20 @@ namespace detail_ {
 template <typename T>
 inline device_t base_region_t<T>::preferred_location() const
 {
-	auto device_id = detail_::get_scalar_range_attribute<bool>(*this, CU_MEM_RANGE_ATTRIBUTE_PREFERRED_LOCATION);
+	auto device_id = detail_::get_scalar_range_attribute<bool>(*this, hipMemRangeAttributePreferredLocation);
 	return cuda::device::get(device_id);
 }
 
 template <typename T>
 inline void base_region_t<T>::set_preferred_location(device_t& device) const
 {
-	detail_::set_range_attribute(*this,CU_MEM_RANGE_ATTRIBUTE_PREFERRED_LOCATION, device.id());
+	detail_::set_range_attribute(*this,hipMemRangeAttributePreferredLocation, device.id());
 }
 
 template <typename T>
 inline void base_region_t<T>::clear_preferred_location() const
 {
-	detail_::unset_range_attribute(*this, CU_MEM_RANGE_ATTRIBUTE_PREFERRED_LOCATION);
+	detail_::unset_range_attribute(*this, hipMemRangeAttributePreferredLocation);
 }
 
 } // namespace detail_
@@ -371,12 +371,12 @@ inline unique_ptr<T> make_unique(
 
 inline void advise_expected_access_by(const_region_t region, device_t& device)
 {
-	detail_::advise(region, CU_MEM_ADVISE_SET_ACCESSED_BY, device.id());
+	detail_::advise(region, hipMemAdviseSetAccessedBy, device.id());
 }
 
 inline void advise_no_access_expected_by(const_region_t region, device_t& device)
 {
-	detail_::advise(region, CU_MEM_ADVISE_UNSET_ACCESSED_BY, device.id());
+	detail_::advise(region, hipMemAdviseUnsetAccessedBy, device.id());
 }
 
 template <typename Allocator>
@@ -386,12 +386,12 @@ template <typename Allocator>
 	::std::vector<device_t, Allocator> devices(num_devices, allocator);
 	auto device_ids = reinterpret_cast<cuda::device::id_t *>(devices.data());
 
-	auto status = cuMemRangeGetAttribute(
+	auto status = hipMemRangeGetAttribute(
 	device_ids, sizeof(device_t) * devices.size(),
-	CU_MEM_RANGE_ATTRIBUTE_ACCESSED_BY, device::address(region.start()), region.size());
+	hipMemRangeAttributeAccessedBy, device::address(region.start()), region.size());
 	throw_if_error_lazy(status, "Obtaining the IDs of devices with access to the managed memory range at "
 						   + cuda::detail_::ptr_as_hex(region.start()));
-	auto first_invalid_element = ::std::lower_bound(device_ids, device_ids + num_devices, cudaInvalidDeviceId);
+	auto first_invalid_element = ::std::lower_bound(device_ids, device_ids + num_devices, hipInvalidDeviceId);
 	// We may have gotten less results that the set of all devices, so let's whittle that down
 
 	if (first_invalid_element - device_ids != num_devices) {
@@ -415,7 +415,7 @@ inline void prefetch_to_host(
 	const_region_t   region,
 	const stream_t&  stream)
 {
-	detail_::prefetch(region, CU_DEVICE_CPU, stream.handle());
+	detail_::prefetch(region, hipCpuDeviceId, stream.handle());
 }
 
 } // namespace async
@@ -485,7 +485,7 @@ inline region_t allocate(
 	};
 	void* allocated = nullptr;
 	auto flags = memory::detail_::make_cuda_host_alloc_flags(options);
-	auto result = cuMemHostAlloc(&allocated, size_in_bytes, flags);
+	auto result = hipHostAlloc(&allocated, size_in_bytes, flags);
 	if (is_success(result) && allocated == nullptr) {
 		// Can this even happen? hopefully not
 		result = static_cast<status_t>(status::named_t::unknown);
@@ -504,7 +504,7 @@ status_and_attribute_value<attribute> get_attribute_with_status(const void *ptr)
 {
 	context::current::detail_::scoped_existence_ensurer_t ensure_we_have_some_context;
 	attribute_value_t <attribute> attribute_value;
-	auto status = cuPointerGetAttribute(&attribute_value, attribute, device::address(ptr));
+	auto status = hipPointerGetAttribute(&attribute_value, attribute, device::address(ptr));
 	return { status, attribute_value };
 }
 
@@ -523,7 +523,7 @@ attribute_value_t<attribute> get_attribute(const void *ptr)
 inline void get_attributes(unsigned num_attributes, pointer::attribute_t* attributes, void** value_ptrs, const void* ptr)
 {
 	context::current::detail_::scoped_existence_ensurer_t ensure_we_have_some_context;
-	auto status = cuPointerGetAttributes( num_attributes, attributes, value_ptrs, device::address(ptr) );
+	auto status = hipDrvPointerGetAttributes( num_attributes, attributes, value_ptrs, device::address(ptr) );
 	throw_if_error_lazy(status, "Obtaining multiple attributes for pointer " + cuda::detail_::ptr_as_hex(ptr));
 }
 
@@ -533,7 +533,7 @@ inline void get_attributes(unsigned num_attributes, pointer::attribute_t* attrib
 inline void copy(void *destination, const void *source, size_t num_bytes)
 {
 	context::current::detail_::scoped_existence_ensurer_t ensure_some_context{};
-	auto result = cuMemcpy(device::address(destination), device::address(source), num_bytes);
+	auto result = hipMemcpy(device::address(destination), device::address(source), num_bytes, hipMemcpyDefault);
 	// TODO: Determine whether it was from host to device, device to host etc and
 	// add this information to the error string
 	throw_if_error_lazy(result, "Synchronously copying data");
@@ -549,11 +549,11 @@ inline void typed_set(T* start, const T& value, size_t num_elements)
 	static_assert(sizeof(T) == 1 or sizeof(T) == 2 or sizeof(T) == 4,
 		"Unsupported type size - only sizes 1, 2 and 4 are supported");
 	// TODO: Consider checking for alignment when compiling without NDEBUG
-	status_t result {CUDA_SUCCESS};
+	status_t result {hipSuccess};
 	switch(sizeof(T)) {
-	case 1: result = cuMemsetD8 (address(start), reinterpret_cast<const ::std::uint8_t& >(value), num_elements); break;
-	case 2: result = cuMemsetD16(address(start), reinterpret_cast<const ::std::uint16_t&>(value), num_elements); break;
-	case 4: result = cuMemsetD32(address(start), reinterpret_cast<const ::std::uint32_t&>(value), num_elements); break;
+	case 1: result = hipMemsetD8 (address(start), reinterpret_cast<const ::std::uint8_t& >(value), num_elements); break;
+	case 2: result = hipMemsetD16(address(start), reinterpret_cast<const ::std::uint16_t&>(value), num_elements); break;
+	case 4: result = hipMemsetD32(address(start), reinterpret_cast<const ::std::uint32_t&>(value), num_elements); break;
 	}
 	throw_if_error_lazy(result, "Setting global device memory bytes");
 }
@@ -607,9 +607,9 @@ inline void set_access_mode(
 	const device_t&              device,
 	access_permissions_t         access_mode)
 {
-	CUmemAccessDesc desc { { CU_MEM_LOCATION_TYPE_DEVICE, device.id() }, CUmemAccess_flags(access_mode) };
+	hipMemAccessDesc desc { { hipMemLocationTypeDevice, device.id() }, hipMemAccessFlags(access_mode) };
 	static constexpr const size_t count { 1 };
-	auto result = cuMemSetAccess(fully_mapped_region.device_address(), fully_mapped_region.size(), &desc, count);
+	auto result = hipMemSetAccess(fully_mapped_region.device_address(), fully_mapped_region.size(), &desc, count);
 	throw_if_error_lazy(result, "Failed setting the access mode to the virtual memory mapping to the range of size "
 						   + ::std::to_string(fully_mapped_region.size()) + " bytes at " + cuda::detail_::ptr_as_hex(fully_mapped_region.data()));
 }
@@ -625,11 +625,11 @@ inline void set_access_mode(
 	const Container<device_t>&   devices,
 	access_permissions_t         access_mode)
 {
-	auto descriptors = ::std::unique_ptr<CUmemAccessDesc[]>(new CUmemAccessDesc[devices.size()]);
+	auto descriptors = ::std::unique_ptr<hipMemAccessDesc[]>(new hipMemAccessDesc[devices.size()]);
 	for(::std::size_t i = 0; i < devices.size(); i++) {
-		descriptors[i] = {{CU_MEM_LOCATION_TYPE_DEVICE, devices[i].id()}, CUmemAccess_flags(access_mode)};
+		descriptors[i] = {{hipMemLocationTypeDevice, devices[i].id()}, hipMemAccessFlags(access_mode)};
 	}
-	auto result = cuMemSetAccess(
+	auto result = hipMemSetAccess(
 		device::address(fully_mapped_region.start()), fully_mapped_region.size(), descriptors.get(), devices.size());
 	throw_if_error_lazy(result, "Failed setting the access mode to the virtual memory mapping to the range of size "
 						   + ::std::to_string(fully_mapped_region.size()) + " bytes at " + cuda::detail_::ptr_as_hex(fully_mapped_region.data()));
@@ -713,8 +713,8 @@ pool_t create(const cuda::device_t& device)
 
 inline region_t allocate(const pool_t& pool, const stream_t &stream, size_t num_bytes)
 {
-	CUdeviceptr dptr;
-	auto status = cuMemAllocFromPoolAsync(&dptr, num_bytes, pool.handle(), stream.handle());
+	hipDeviceptr_t dptr;
+	auto status = hipMallocFromPoolAsync(&dptr, num_bytes, pool.handle(), stream.handle());
 	throw_if_error_lazy(status, "Failed scheduling an allocation of " + ::std::to_string(num_bytes)
 		+ " bytes of memory from " + detail_::identify(pool) + ", on " + stream::detail_::identify(stream));
 	return {as_pointer(dptr), num_bytes };
@@ -727,7 +727,7 @@ shared_handle_t<Kind> export_(const pool_t& pool)
 {
 	shared_handle_t<Kind> result;
 	static constexpr const unsigned long long flags { 0 };
-	auto status = cuMemPoolExportToShareableHandle(&result, pool.handle(), static_cast<CUmemAllocationHandleType>(Kind), flags);
+	auto status = hipMemPoolExportToShareableHandle(&result, pool.handle(), static_cast<hipMemAllocationHandleType>(Kind), flags);
 	throw_if_error_lazy(status, "Exporting " + pool::detail_::identify(pool) +" for inter-process use");
 	return result;
 }
@@ -802,7 +802,7 @@ inline memory::region_t stream_t::enqueue_t::allocate(const memory::pool_t& pool
 inline memory::pool_t device_t::default_memory_pool() const
 {
 	memory::pool::handle_t handle;
-	auto status = cuDeviceGetDefaultMemPool(&handle, id_);
+	auto status = hipDeviceGetDefaultMemPool(&handle, id_);
 	throw_if_error_lazy(status, "Failed obtaining the default memory pool for " + device::detail_::identify(id_));
 	return memory::pool::wrap(id_, handle, do_not_take_ownership);
 }
