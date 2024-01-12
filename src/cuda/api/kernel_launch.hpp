@@ -141,11 +141,6 @@ void enqueue_raw_kernel_launch_in_current_context(
 	stream::handle_t        stream_handle,
 	launch_configuration_t  launch_configuration,
 	KernelParameters&&...   parameters)
-#ifndef __CUDACC__
-// If we're not in CUDA's NVCC, this can't run properly anyway, so either we throw some
-// compilation error, or we just do nothing. For now it's option 2.
-;
-#else
 {
 	using decayed_kf_type = typename ::std::decay<KernelFunction>::type;
 	static_assert(::std::is_function<decayed_kf_type>::value or is_function_ptr<decayed_kf_type>::value,
@@ -210,7 +205,6 @@ void enqueue_raw_kernel_launch_in_current_context(
 #endif // CUDA_VERSION >= 9000
 	}
 }
-#endif
 
 } // namespace detail_
 
