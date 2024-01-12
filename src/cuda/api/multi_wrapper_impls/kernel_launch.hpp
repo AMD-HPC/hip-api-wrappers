@@ -25,7 +25,7 @@ inline void validate_compatibility(
 	memory::shared::size_t shared_mem_size)
 {
 	if (shared_mem_size == 0) { return; }
-	memory::shared::size_t max_shared = device.get_attribute(CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK_OPTIN);
+	memory::shared::size_t max_shared = device.get_attribute(hipDeviceAttributeSharedMemPerBlockOptin);
 
 	// Note: A single kernel may not be able to access this shared memory capacity without opting-in to
 	// it using	kernel_t::set_maximum_dynamic_shared_memory_per_block. See @ref kernel_t
@@ -50,9 +50,9 @@ inline void validate_block_dimension_compatibility(
 			+ " for " + device::detail_::identify(device.id()));
 	}
 	auto dim_maxima = grid::block_dimensions_t{
-		static_cast<grid::block_dimension_t>(device.get_attribute(CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_X)),
-		static_cast<grid::block_dimension_t>(device.get_attribute(CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_Y)),
-		static_cast<grid::block_dimension_t>(device.get_attribute(CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_Z))
+		static_cast<grid::block_dimension_t>(device.get_attribute(hipDeviceAttributeMaxBlockDimX)),
+		static_cast<grid::block_dimension_t>(device.get_attribute(hipDeviceAttributeMaxBlockDimY)),
+		static_cast<grid::block_dimension_t>(device.get_attribute(hipDeviceAttributeMaxBlockDimZ))
 	};
 	auto device_id = device.id();
 	auto check =
@@ -151,18 +151,18 @@ inline void launch_type_erased_in_current_context(
 	status_t status;
 	const auto&lc = launch_config; // alias for brevity
 	if (launch_config.block_cooperation)
-		status = cuLaunchCooperativeKernel(
+		status = hipLaunchCooperativeKernel(
 			kernel_function_handle,
-			lc.dimensions.grid.x,  lc.dimensions.grid.y,  lc.dimensions.grid.z,
-			lc.dimensions.block.x, lc.dimensions.block.y, lc.dimensions.block.z,
+			dim3(lc.dimensions.grid.x,  lc.dimensions.grid.y,  lc.dimensions.grid.z),
+			dim3(lc.dimensions.block.x, lc.dimensions.block.y, lc.dimensions.block.z),
+			const_cast<void**>(marshalled_arguments),
 			lc.dynamic_shared_memory_size,
-			stream_handle,
-			const_cast<void**>(marshalled_arguments)
+			stream_handle
 		);
 	else {
 		static constexpr const auto no_arguments_in_alternative_format = nullptr;
 		// TODO: Consider passing marshalled_arguments in the alternative format
-		status = cuLaunchKernel(
+		status = hipModuleLaunchKernel(
 			kernel_function_handle,
 			lc.dimensions.grid.x,  lc.dimensions.grid.y,  lc.dimensions.grid.z,
 			lc.dimensions.block.x, lc.dimensions.block.y, lc.dimensions.block.z,
@@ -282,10 +282,10 @@ inline void launch_type_erased(
 
 #if ! CAN_GET_APRIORI_KERNEL_HANDLE
 
-#if defined(__CUDACC__)
+#if defined(__HIPCC__)
 
 // Unfortunately, the CUDA runtime API does not allow for computation of the grid parameters for maximum occupancy
-// from code compiled with a host-side-only compiler! See cuda_runtime.h for details
+// from code compiled with a host-side-only compiler! See hip/hip_runtime.h for details
 
 #if CUDA_VERSION >= 10000
 namespace detail_ {
@@ -302,12 +302,12 @@ inline grid::composite_dimensions_t min_grid_params_for_max_occupancy(
 	int block_size { 0 };
 		// Note: only initializing the values her because of a
 		// spurious (?) compiler warning about potential uninitialized use.
-	auto result = cudaOccupancyMaxPotentialBlockSizeVariableSMemWithFlags(
+	auto result = hipOccupancyMaxPotentialBlockSizeVariableSMemWithFlags(
 		&min_grid_size_in_blocks, &block_size,
 		ptr,
 		block_size_to_dynamic_shared_mem_size,
 		static_cast<int>(block_size_limit),
-		disable_caching_override ? cudaOccupancyDisableCachingOverride : cudaOccupancyDefault
+		disable_caching_override ? hipOccupancyDisableCachingOverride : hipOccupancyDefault
 	);
 	throw_if_error_lazy(result,
 		"Failed obtaining parameters for a minimum-size grid for kernel " + detail_::ptr_as_hex(ptr) +
@@ -352,7 +352,7 @@ grid::composite_dimensions_t min_grid_params_for_max_occupancy(
 }
 #endif // CUDA_VERSION >= 10000
 
-#endif // defined(__CUDACC__)
+#endif // defined(__HIPCC__)
 #endif // ! CAN_GET_APRIORI_KERNEL_HANDLE
 
 } // namespace cuda
